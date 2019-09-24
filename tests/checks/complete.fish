@@ -6,14 +6,14 @@ complete -c complete_test_alpha2 --no-files -w 'complete_test_alpha1 extra1'
 complete -c complete_test_alpha3 --no-files -w 'complete_test_alpha2 extra2'
 
 complete -C'complete_test_alpha1 arg1 '
-# CHECK: complete_test_alpha1 arg1 
+# CHECK: complete_test_alpha1\ arg1\ 
 complete -C'complete_test_alpha2 arg2 '
-# CHECK: complete_test_alpha1 extra1 arg2 
+# CHECK: complete_test_alpha1\ extra1\ arg2\ 
 complete -C'complete_test_alpha3 arg3 '
-# CHECK: complete_test_alpha1 extra1 extra2 arg3 
+# CHECK: complete_test_alpha1\ extra1\ extra2\ arg3\ 
 # Works even with the argument as a separate token.
 complete -C 'complete_test_alpha3 arg3 '
-# CHECK: complete_test_alpha1 extra1 extra2 arg3 
+# CHECK: complete_test_alpha1\ extra1\ extra2\ arg3\ 
 
 alias myalias1 'complete_test_alpha1 arg1'
 alias myalias2='complete_test_alpha1 arg2'
@@ -24,8 +24,8 @@ myalias2 call2
 # CHECK: arg2 call2
 complete -C'myalias1 call3 '
 complete -C'myalias2 call3 '
-# CHECK: complete_test_alpha1 arg1 call3 
-# CHECK: complete_test_alpha1 arg2 call3 
+# CHECK: complete_test_alpha1\ arg1\ call3\ 
+# CHECK: complete_test_alpha1\ arg2\ call3\ 
 
 # Ensure that commands can't wrap themselves - if this did,
 # the completion would be executed a bunch of times.
@@ -59,3 +59,24 @@ complete
 # CHECK: complete {{.*}}
 # CHECK: complete {{.*}}
 # CHECK: complete {{.*}}
+
+# complete prints a single escaped token per line (see #1127 and #952).
+complete -c complete_test_gamma1 -fa '"arg with spaces"'
+complete -C 'complete_test_gamma1 arg\\ '
+# CHECK: arg\ with\ spaces
+
+set -l __variable value
+# Don't unescape characters that are meant to be escaped (#3469)
+complete -c complete_test_gamma2 -f
+complete -C'complete_test_gamma2 \$__variable-$__var'
+# CHECK: \$__variable-$__variable
+
+# Parameters given to -a have to be escaped twice because they are parsed by the shell twice:
+# once when parsing the complete command, and again when splitting the parameter given to -a.
+# Hence completing one literal backslash requires four backslashes.
+complete -c complete_test_gamma3 -fa '\\\\ \\$'
+complete -c complete_test_gamma3 -fa '(printf "\\\\")'
+complete -C'complete_test_gamma3 '
+# CHECK: \\
+# CHECK: \\
+# CHECK: \$

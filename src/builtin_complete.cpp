@@ -349,6 +349,7 @@ int builtin_complete(parser_t &parser, io_streams_t &streams, wchar_t **argv) {
                 // Make a fake commandline, and then apply the completion to it.
                 const wcstring faux_cmdline = token;
                 size_t tmp_cursor = faux_cmdline.size();
+                // Do escape the completion, see #1127 and #3469.
                 wcstring faux_cmdline_with_completion = completion_apply_to_command_line(
                     next.completion, next.flags, faux_cmdline, &tmp_cursor, false);
 
@@ -361,10 +362,6 @@ int builtin_complete(parser_t &parser, io_streams_t &streams, wchar_t **argv) {
                     faux_cmdline_with_completion.resize(faux_cmdline_with_completion.size() - 1);
                 }
 
-                // The input data is meant to be something like you would have on the command
-                // line, e.g. includes backslashes. The output should be raw, i.e. unescaped. So
-                // we need to unescape the command line. See #1127.
-                unescape_string_in_place(&faux_cmdline_with_completion, UNESCAPE_DEFAULT);
                 streams.out.append(faux_cmdline_with_completion);
 
                 // Append any description.

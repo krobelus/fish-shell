@@ -117,7 +117,7 @@ begin
   # Verify that we can expand commands when PATH has parens
   set -l PATH $parened_path $PATH
   set -l completed (complete -C__test6_ | cut -f 1 -d \t)
-  if test "$completed" = '__test6_(paren)_command'
+  if test "$completed" = '__test6_\(paren\)_command'
     echo "Command completion with parened PATHs test passed"
   else
     echo "Command completion with parened PATHs test failed. Expected __test6_(paren)_command, got $completed" >&2

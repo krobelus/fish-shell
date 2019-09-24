@@ -17,6 +17,7 @@
 - `switch` now allows arguments that expand to nothing, like empty variables (#5677).
 - The null command (`:`) now always exits successfully, rather than passing through the previous exit status (#6022).
 - `jobs --last` returns 0 to indicate success when a job is found (#6104).
+- `complete -C` now prints escaped completions, use `complete -C | string unescape` when providing completions
 
 ### Syntax changes and new commands
 - Brace expansion now only takes place if the braces include a "," or a variable expansion, meaning common commands such as `git reset HEAD@{0}` do not require escaping (#5869).
