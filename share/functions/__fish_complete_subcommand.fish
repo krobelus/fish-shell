@@ -39,7 +39,7 @@ function __fish_complete_subcommand -d "Complete subcommand" --no-scope-shadowin
         end
     end
 
-    printf "%s\n" (complete -C$res)
+    complete -C$res | string unescape
 
 end
 

@@ -41,7 +41,7 @@ end
 #
 # Inherit user/host completions from ssh
 #
-complete -c scp -d Remote -n "__fish_no_scp_remote_specified; and not string match -e : (commandline -ct)" -a "(complete -C'ssh ' | string replace -r '\t.*' ':')"
+complete -c scp -d Remote -n "__fish_no_scp_remote_specified; and not string match -e : (commandline -ct)" -a "(complete -C'ssh ' | string unescape | string replace -r '\t.*' ':')"
 
 #
 # Local path

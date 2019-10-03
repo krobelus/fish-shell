@@ -20,6 +20,6 @@ function __fish_complete_svn_diff --description 'Complete "svn diff" arguments'
         set -e cmdl[1]
     end
     set -l token (commandline -cpt)
-    complete -C"$diff $args $token"
+    complete -C"$diff $args $token" | string unescape
 
 end
