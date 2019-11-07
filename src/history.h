@@ -127,7 +127,7 @@ class history_t {
 
     // Privately add an item. If pending, the item will not be returned by history searches until a
     // call to resolve_pending.
-    void add(const history_item_t &item, bool pending = false);
+    void add(const history_item_t &item, bool pending = false, bool save = true);
 
    public:
     explicit history_t(wcstring name);
@@ -154,7 +154,7 @@ class history_t {
     // item_at_index until a call to resolve_pending(). Pending items are tracked with an offset
     // into the array of new items, so adding a non-pending item has the effect of resolving all
     // pending items.
-    void add(const wcstring &str, history_identifier_t ident = 0, bool pending = false);
+    void add(const wcstring &str, history_identifier_t ident = 0, bool pending = false, bool save = true);
 
     // Remove a history item.
     void remove(const wcstring &str);
