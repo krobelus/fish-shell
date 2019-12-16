@@ -9,8 +9,8 @@ ENDIF()
 
 PROJECT(fish)
 
-# We are C++11.
-SET(CMAKE_CXX_STANDARD 11)
+# We are C++20.
+SET(CMAKE_CXX_STANDARD 20)
 SET(DEFAULT_BUILD_TYPE "RelWithDebInfo")
 
 # Use the default flags (#6296) but remove -DNDEBUG so that asserts remain enabled.

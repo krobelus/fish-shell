@@ -17,6 +17,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "fallback.h"  // IWYU pragma: keep
@@ -36,6 +37,7 @@
 
 // Common string type.
 typedef std::wstring wcstring;
+typedef std::wstring_view wcstring_view;
 typedef std::vector<wcstring> wcstring_list_t;
 
 // Maximum number of bytes used by a single utf-8 character.
@@ -301,16 +303,20 @@ bool string_prefixes_string(const wchar_t *proposed_prefix, const wcstring &valu
 bool string_prefixes_string(const wchar_t *proposed_prefix, const wchar_t *value);
 bool string_prefixes_string(const char *proposed_prefix, const std::string &value);
 bool string_prefixes_string(const char *proposed_prefix, const char *value);
+bool string_prefixes_string(wcstring_view proposed_prefix, wcstring_view value);
 
 /// Test if a string is a suffix of another.
 bool string_suffixes_string(const wcstring &proposed_suffix, const wcstring &value);
 bool string_suffixes_string(const wchar_t *proposed_suffix, const wcstring &value);
+bool string_suffixes_string(wcstring_view proposed_suffix, wcstring_view value);
 bool string_suffixes_string_case_insensitive(const wcstring &proposed_suffix,
                                              const wcstring &value);
 
 /// Test if a string prefixes another without regard to case. Returns true if a is a prefix of b.
 bool string_prefixes_string_case_insensitive(const wcstring &proposed_prefix,
                                              const wcstring &value);
+bool string_prefixes_string_case_insensitive(wcstring_view proposed_prefix,
+                                             wcstring_view value);
 
 /// Case-insensitive string search, modeled after std::string::find().
 /// \param fuzzy indicates this is being used for fuzzy matching and case insensitivity is
@@ -752,15 +758,7 @@ wcstring vformat_string(const wchar_t *format, va_list va_orig);
 void append_format(wcstring &str, const wchar_t *format, ...);
 void append_formatv(wcstring &target, const wchar_t *format, va_list va_orig);
 
-#ifdef HAVE_STD__MAKE_UNIQUE
 using std::make_unique;
-#else
-/// make_unique implementation
-template <typename T, typename... Args>
-std::unique_ptr<T> make_unique(Args &&... args) {
-    return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
-}
-#endif
 
 /// This functions returns the end of the quoted substring beginning at \c in. The type of quoting
 /// character is detemrined by examining \c in. Returns 0 on error.
@@ -971,7 +969,7 @@ void invalidate_termsize(bool invalidate_vars = false);
 struct winsize get_current_winsize();
 
 bool valid_var_name_char(wchar_t chr);
-bool valid_var_name(const wcstring &str);
+bool valid_var_name(wcstring_view str);
 bool valid_func_name(const wcstring &str);
 
 // Return values (`$status` values for fish scripts) for various situations.

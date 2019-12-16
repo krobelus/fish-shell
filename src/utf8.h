@@ -21,6 +21,7 @@
 #include <stddef.h>
 
 #include <string>
+#include <string_view>
 
 #define UTF8_IGNORE_ERROR 0x01
 #define UTF8_SKIP_BOM 0x02

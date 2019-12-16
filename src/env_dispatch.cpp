@@ -69,13 +69,16 @@ static const wcstring_list_t locale_variables({L"LANG", L"LANGUAGE", L"LC_ALL", 
 static const wcstring_list_t curses_variables({L"TERM", L"TERMINFO", L"TERMINFO_DIRS"});
 
 class var_dispatch_table_t {
-    using named_callback_t = std::function<void(const wcstring &, env_stack_t &)>;
-    std::unordered_map<wcstring, named_callback_t> named_table_;
+    using named_callback_t = std::function<void(wcstring_view , env_stack_t &)>;
+    // TODO make this an unordered_map again?
+    // http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/p0919r3.html
+    std::map<wcstring, named_callback_t, std::less<>> named_table_;
 
     using anon_callback_t = std::function<void(env_stack_t &)>;
-    std::unordered_map<wcstring, anon_callback_t> anon_table_;
+    // TODO make this an unordered_map
+    std::map<wcstring, anon_callback_t, std::less<>> anon_table_;
 
-    bool observes_var(const wcstring &name) {
+    bool observes_var(wcstring_view name) {
         return named_table_.count(name) || anon_table_.count(name);
     }
 
@@ -94,7 +97,7 @@ class var_dispatch_table_t {
         anon_table_.emplace(std::move(name), std::move(cb));
     }
 
-    void dispatch(const wcstring &key, env_stack_t &vars) const {
+    void dispatch(wcstring_view key, env_stack_t &vars) const {
         auto named = named_table_.find(key);
         if (named != named_table_.end()) {
             named->second(key, vars);
@@ -186,7 +189,7 @@ static void guess_emoji_width(const environment_t &vars) {
 }
 
 /// React to modifying the given variable.
-void env_dispatch_var_change(const wcstring &key, env_stack_t &vars) {
+void env_dispatch_var_change(wcstring_view key, env_stack_t &vars) {
     ASSERT_IS_MAIN_THREAD();
     // Do nothing if not yet fully initialized.
     if (!s_var_dispatch_table) return;
@@ -248,8 +251,9 @@ static void handle_complete_path_change(env_stack_t &vars) {
     complete_invalidate_path();
 }
 
-static void handle_tz_change(const wcstring &var_name, env_stack_t &vars) {
-    handle_timezone(var_name.c_str(), vars);
+static void handle_tz_change(wcstring_view var_name, env_stack_t &vars) {
+    wcstring tmp(var_name);
+    handle_timezone(tmp.c_str(), vars);
 }
 
 static void handle_locale_change(const environment_t &vars) {

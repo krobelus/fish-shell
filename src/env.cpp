@@ -77,7 +77,7 @@ struct electric_var_t {
 
     bool exports() const { return flags & fexports; }
 
-    static const electric_var_t *for_name(const wcstring &name);
+    static const electric_var_t *for_name(wcstring_view name);
 };
 
 static const electric_var_t electric_variables[] = {
@@ -95,7 +95,7 @@ static const electric_var_t electric_variables[] = {
     {L"umask", electric_var_t::fcomputed},
 };
 
-const electric_var_t *electric_var_t::for_name(const wcstring &name) {
+const electric_var_t *electric_var_t::for_name(wcstring_view name) {
     for (const auto &var : electric_variables) {
         if (name == var.name) {
             return &var;
@@ -105,7 +105,7 @@ const electric_var_t *electric_var_t::for_name(const wcstring &name) {
 }
 
 /// Check if a variable may not be set using the set command.
-static bool is_read_only(const wcstring &key) {
+static bool is_read_only(wcstring_view key) {
     if (const auto *ev = electric_var_t::for_name(key)) {
         return ev->readonly();
     }
@@ -114,7 +114,7 @@ static bool is_read_only(const wcstring &key) {
 }
 
 /// Return true if a variable should become a path variable by default. See #436.
-static bool variable_should_auto_pathvar(const wcstring &name) {
+static bool variable_should_auto_pathvar(wcstring_view name) {
     return string_suffixes_string(L"PATH", name);
 }
 // This is a big dorky lock we take around everything that might read from or modify an env_node_t.
@@ -173,7 +173,7 @@ wcstring environment_t::get_pwd_slash() const {
 }
 
 null_environment_t::~null_environment_t() = default;
-maybe_t<env_var_t> null_environment_t::get(const wcstring &key, env_mode_flags_t mode) const {
+maybe_t<env_var_t> null_environment_t::get(wcstring_view key, env_mode_flags_t mode) const {
     UNUSED(key);
     UNUSED(mode);
     return none();
@@ -471,7 +471,7 @@ class env_node_t {
     env_node_t(bool is_new_scope, std::shared_ptr<env_node_t> next_scope)
         : new_scope(is_new_scope), next(std::move(next_scope)) {}
 
-    maybe_t<env_var_t> find_entry(const wcstring &key) {
+    maybe_t<env_var_t> find_entry(wcstring_view key) {
         auto it = env.find(key);
         if (it != env.end()) return it->second;
         return none();
@@ -498,7 +498,7 @@ class env_scoped_impl_t : public environment_t {
         assert(locals_ && globals_ && "Nodes cannot be null");
     }
 
-    maybe_t<env_var_t> get(const wcstring &key, env_mode_flags_t mode = ENV_DEFAULT) const override;
+    maybe_t<env_var_t> get(wcstring_view key, env_mode_flags_t mode = ENV_DEFAULT) const override;
     wcstring_list_t get_names(int flags) const override;
 
     perproc_data_t &perproc_data() { return perproc_data_; }
@@ -537,10 +537,10 @@ class env_scoped_impl_t : public environment_t {
     // populated. A maybe_t<maybe_t<...>> is a bridge too far.
     // These may populate result with none() if a variable is present which does not match the
     // query.
-    maybe_t<env_var_t> try_get_computed(const wcstring &key) const;
-    maybe_t<env_var_t> try_get_local(const wcstring &key) const;
-    maybe_t<env_var_t> try_get_global(const wcstring &key) const;
-    maybe_t<env_var_t> try_get_universal(const wcstring &key) const;
+    maybe_t<env_var_t> try_get_computed(wcstring_view key) const;
+    maybe_t<env_var_t> try_get_local(wcstring_view key) const;
+    maybe_t<env_var_t> try_get_global(wcstring_view key) const;
+    maybe_t<env_var_t> try_get_universal(wcstring_view key) const;
 
     /// Invoke a function on the current (nonzero) export generations, in order.
     template <typename Func>
@@ -616,7 +616,7 @@ std::shared_ptr<const null_terminated_array_t<char>> env_scoped_impl_t::create_e
 
     if (uvars()) {
         const wcstring_list_t uni = uvars()->get_names(true, false);
-        for (const wcstring &key : uni) {
+        for (wcstring_view key : uni) {
             auto var = uvars()->get(key);
             assert(var && "Variable should be present in uvars");
             // Note that std::map::insert does NOT overwrite a value already in the map,
@@ -653,7 +653,7 @@ std::shared_ptr<const null_terminated_array_t<char>> env_scoped_impl_t::export_a
     return export_array_;
 }
 
-maybe_t<env_var_t> env_scoped_impl_t::try_get_computed(const wcstring &key) const {
+maybe_t<env_var_t> env_scoped_impl_t::try_get_computed(wcstring_view key) const {
     const electric_var_t *ev = electric_var_t::for_name(key);
     if (!(ev && ev->computed())) {
         return none();
@@ -698,7 +698,7 @@ maybe_t<env_var_t> env_scoped_impl_t::try_get_computed(const wcstring &key) cons
     DIE("unrecognized computed var name");
 }
 
-maybe_t<env_var_t> env_scoped_impl_t::try_get_local(const wcstring &key) const {
+maybe_t<env_var_t> env_scoped_impl_t::try_get_local(wcstring_view key) const {
     auto cursor = locals_;
     while (cursor) {
         auto where = cursor->env.find(key);
@@ -710,7 +710,7 @@ maybe_t<env_var_t> env_scoped_impl_t::try_get_local(const wcstring &key) const {
     return none();
 }
 
-maybe_t<env_var_t> env_scoped_impl_t::try_get_global(const wcstring &key) const {
+maybe_t<env_var_t> env_scoped_impl_t::try_get_global(wcstring_view key) const {
     auto where = globals_->env.find(key);
     if (where != globals_->env.end()) {
         return where->second;
@@ -718,7 +718,7 @@ maybe_t<env_var_t> env_scoped_impl_t::try_get_global(const wcstring &key) const 
     return none();
 }
 
-maybe_t<env_var_t> env_scoped_impl_t::try_get_universal(const wcstring &key) const {
+maybe_t<env_var_t> env_scoped_impl_t::try_get_universal(wcstring_view key) const {
     if (!uvars()) return none();
     auto var = uvars()->get(key);
     if (var) {
@@ -727,7 +727,7 @@ maybe_t<env_var_t> env_scoped_impl_t::try_get_universal(const wcstring &key) con
     return none();
 }
 
-maybe_t<env_var_t> env_scoped_impl_t::get(const wcstring &key, env_mode_flags_t mode) const {
+maybe_t<env_var_t> env_scoped_impl_t::get(wcstring_view key, env_mode_flags_t mode) const {
     const query_t query(mode);
 
     maybe_t<env_var_t> result = try_get_computed(key);
@@ -826,10 +826,10 @@ class env_stack_impl_t final : public env_scoped_impl_t {
     using env_scoped_impl_t::env_scoped_impl_t;
 
     /// Set a variable under the name \p key, using the given \p mode, setting its value to \p val.
-    mod_result_t set(const wcstring &key, env_mode_flags_t mode, wcstring_list_t val);
+    mod_result_t set(wcstring_view key, env_mode_flags_t mode, wcstring_list_t val);
 
     /// Remove a variable under the name \p key.
-    mod_result_t remove(const wcstring &key, int var_mode);
+    mod_result_t remove(wcstring_view key, int var_mode);
 
     /// Push a new shadowing local scope.
     void push_shadowing();
@@ -867,7 +867,7 @@ class env_stack_impl_t final : public env_scoped_impl_t {
     };
 
     /// Find the first node in the chain starting at \p node which contains the given key \p key.
-    static env_node_ref_t find_in_chain(const env_node_ref_t &node, const wcstring &key) {
+    static env_node_ref_t find_in_chain(const env_node_ref_t &node, wcstring_view key) {
         for (auto cursor = node; cursor; cursor = cursor->next) {
             if (cursor->env.count(key)) {
                 return cursor;
@@ -878,7 +878,7 @@ class env_stack_impl_t final : public env_scoped_impl_t {
 
     /// Remove a variable from the chain \p node.
     /// \return true if the variable was found and removed.
-    bool remove_from_chain(env_node_ref_t node, const wcstring &key) const {
+    bool remove_from_chain(env_node_ref_t node, wcstring_view key) const {
         for (auto cursor = node; cursor; cursor = cursor->next) {
             auto iter = cursor->env.find(key);
             if (iter != cursor->env.end()) {
@@ -895,13 +895,13 @@ class env_stack_impl_t final : public env_scoped_impl_t {
     /// Try setting\p key as an electric or readonly variable.
     /// \return an error code, or none() if not an electric or readonly variable.
     /// \p val will not be modified upon a none() return.
-    maybe_t<int> try_set_electric(const wcstring &key, const query_t &query, wcstring_list_t &val);
+    maybe_t<int> try_set_electric(wcstring_view key, const query_t &query, wcstring_list_t &val);
 
     /// Set a universal value.
-    void set_universal(const wcstring &key, wcstring_list_t val, const query_t &query);
+    void set_universal(wcstring_view key, wcstring_list_t val, const query_t &query);
 
     /// Set a variable in a given node \p node.
-    void set_in_node(env_node_ref_t node, const wcstring &key, wcstring_list_t &&val,
+    void set_in_node(env_node_ref_t node, wcstring_view key, wcstring_list_t &&val,
                      const var_flags_t &flags);
 
     // Implement the default behavior of 'set' by finding the node for an unspecified scope.
@@ -914,7 +914,7 @@ class env_stack_impl_t final : public env_scoped_impl_t {
 
     /// Get a pointer to an existing variable, or nullptr.
     /// This is used for inheriting pathvar and export status.
-    const env_var_t *find_variable(const wcstring &key) const {
+    const env_var_t *find_variable(wcstring_view key) const {
         env_node_ref_t node = find_in_chain(locals_, key);
         if (!node) node = find_in_chain(globals_, key);
         if (node) {
@@ -970,9 +970,9 @@ static wcstring_list_t colon_split(const wcstring_list_t &val) {
     return split_val;
 }
 
-void env_stack_impl_t::set_in_node(env_node_ref_t node, const wcstring &key, wcstring_list_t &&val,
+void env_stack_impl_t::set_in_node(env_node_ref_t node, wcstring_view key, wcstring_list_t &&val,
                                    const var_flags_t &flags) {
-    env_var_t &var = node->env[key];
+    env_var_t &var = node->env[wcstring(key)];
 
     // Use an explicit exports, or inherit from the existing variable.
     bool res_exports = flags.exports.has_value() ? *flags.exports : var.exports();
@@ -996,7 +996,7 @@ void env_stack_impl_t::set_in_node(env_node_ref_t node, const wcstring &key, wcs
     }
 }
 
-maybe_t<int> env_stack_impl_t::try_set_electric(const wcstring &key, const query_t &query,
+maybe_t<int> env_stack_impl_t::try_set_electric(wcstring_view key, const query_t &query,
                                                 wcstring_list_t &val) {
     const electric_var_t *ev = electric_var_t::for_name(key);
     if (!ev) {
@@ -1043,7 +1043,7 @@ maybe_t<int> env_stack_impl_t::try_set_electric(const wcstring &key, const query
 }
 
 /// Set a universal variable, inheriting as applicable from the given old variable.
-void env_stack_impl_t::set_universal(const wcstring &key, wcstring_list_t val,
+void env_stack_impl_t::set_universal(wcstring_view key, wcstring_list_t val,
                                      const query_t &query) {
     ASSERT_IS_MAIN_THREAD();
     if (!uvars()) return;
@@ -1085,7 +1085,7 @@ void env_stack_impl_t::set_universal(const wcstring &key, wcstring_list_t val,
     uvars()->set(key, new_var);
 }
 
-mod_result_t env_stack_impl_t::set(const wcstring &key, env_mode_flags_t mode,
+mod_result_t env_stack_impl_t::set(wcstring_view key, env_mode_flags_t mode,
                                    wcstring_list_t val) {
     const query_t query(mode);
     // Handle electric and read-only variables.
@@ -1146,7 +1146,7 @@ mod_result_t env_stack_impl_t::set(const wcstring &key, env_mode_flags_t mode,
     return result;
 }
 
-mod_result_t env_stack_impl_t::remove(const wcstring &key, int mode) {
+mod_result_t env_stack_impl_t::remove(wcstring_view key, int mode) {
     const query_t query(mode);
 
     // Users can't remove read-only keys.
@@ -1240,13 +1240,13 @@ acquired_lock<const env_stack_impl_t> env_stack_t::acquire_impl() const {
     return acquired_lock<const env_stack_impl_t>::from_global(env_lock, impl_.get());
 }
 
-maybe_t<env_var_t> env_stack_t::get(const wcstring &key, env_mode_flags_t mode) const {
+maybe_t<env_var_t> env_stack_t::get(wcstring_view key, env_mode_flags_t mode) const {
     return acquire_impl()->get(key, mode);
 }
 
 wcstring_list_t env_stack_t::get_names(int flags) const { return acquire_impl()->get_names(flags); }
 
-int env_stack_t::set(const wcstring &key, env_mode_flags_t mode, wcstring_list_t vals,
+int env_stack_t::set(wcstring_view key, env_mode_flags_t mode, wcstring_list_t vals,
                      std::vector<event_t> *out_events) {
     // Historical behavior.
     if (vals.size() == 1 && (key == L"PWD" || key == L"HOME")) {
@@ -1270,7 +1270,7 @@ int env_stack_t::set(const wcstring &key, env_mode_flags_t mode, wcstring_list_t
             env_dispatch_var_change(key, *this);
         }
         if (out_events) {
-            out_events->push_back(event_t::variable(key, {L"VARIABLE", L"SET", key}));
+            out_events->push_back(event_t::variable(wcstring(key), {L"VARIABLE", L"SET", wcstring(key)}));
         }
     }
     // If the principal stack modified universal variables, then post a barrier.
@@ -1280,19 +1280,19 @@ int env_stack_t::set(const wcstring &key, env_mode_flags_t mode, wcstring_list_t
     return ret.status;
 }
 
-int env_stack_t::set_one(const wcstring &key, env_mode_flags_t mode, wcstring val,
+int env_stack_t::set_one(wcstring_view key, env_mode_flags_t mode, wcstring val,
                          std::vector<event_t> *out_events) {
     wcstring_list_t vals;
     vals.push_back(std::move(val));
     return set(key, mode, std::move(vals), out_events);
 }
 
-int env_stack_t::set_empty(const wcstring &key, env_mode_flags_t mode,
+int env_stack_t::set_empty(wcstring_view key, env_mode_flags_t mode,
                            std::vector<event_t> *out_events) {
     return set(key, mode, {}, out_events);
 }
 
-int env_stack_t::remove(const wcstring &key, int mode, std::vector<event_t> *out_events) {
+int env_stack_t::remove(wcstring_view key, int mode, std::vector<event_t> *out_events) {
     mod_result_t ret = acquire_impl()->remove(key, mode);
     if (ret.status == ENV_OK) {
         if (ret.global_modified || is_principal()) {
@@ -1300,7 +1300,7 @@ int env_stack_t::remove(const wcstring &key, int mode, std::vector<event_t> *out
             env_dispatch_var_change(key, *this);
         }
         if (out_events) {
-            out_events->push_back(event_t::variable(key, {L"VARIABLE", L"ERASE", key}));
+            out_events->push_back(event_t::variable(wcstring(key), {L"VARIABLE", L"ERASE", wcstring(key)}));
         }
     }
     if (ret.uvar_modified && is_principal()) {

@@ -61,8 +61,8 @@ class env_universal_t {
     bool load_from_path(const wcstring &path, callback_data_list_t &callbacks);
     void load_from_fd(int fd, callback_data_list_t &callbacks);
 
-    void set_internal(const wcstring &key, const env_var_t &var);
-    bool remove_internal(const wcstring &key);
+    void set_internal(wcstring_view key, const env_var_t &var);
+    bool remove_internal(wcstring_view key);
 
     // Functions concerned with saving.
     bool open_and_acquire_lock(const std::string &path, int *out_fd);
@@ -97,16 +97,16 @@ class env_universal_t {
     explicit env_universal_t(wcstring path);
 
     // Get the value of the variable with the specified name.
-    maybe_t<env_var_t> get(const wcstring &name) const;
+    maybe_t<env_var_t> get(wcstring_view name) const;
 
     // \return flags from the variable with the given name.
-    maybe_t<env_var_t::env_var_flags_t> get_flags(const wcstring &name) const;
+    maybe_t<env_var_t::env_var_flags_t> get_flags(wcstring_view name) const;
 
     // Sets a variable.
-    void set(const wcstring &key, env_var_t var);
+    void set(wcstring_view key, env_var_t var);
 
     // Removes a variable. Returns true if it was found, false if not.
-    bool remove(const wcstring &key);
+    bool remove(wcstring_view key);
 
     // Gets variable names.
     wcstring_list_t get_names(bool show_exported, bool show_unexported) const;

@@ -56,7 +56,7 @@ static bool safe_copy_wchar_to_utf8_wchar(const wchar_t *in, utf8_wchar_t *out, 
     return result;
 }
 
-bool wchar_to_utf8_string(const std::wstring &str, std::string *result) {
+bool wchar_to_utf8_string(const wcstring &str, std::string *result) {
     result->clear();
     const size_t inlen = str.size();
     if (inlen == 0) {

@@ -176,14 +176,4 @@ int main () {
 ENDIF()
 CMAKE_POP_CHECK_STATE()
 
-CHECK_CXX_SOURCE_COMPILES("
-#include <memory>
-
-int main () {
-  std::unique_ptr<int> foo = std::make_unique<int>();
-}
-"
-  HAVE_STD__MAKE_UNIQUE
-)
-
 FIND_PROGRAM(SED sed)

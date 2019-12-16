@@ -1930,11 +1930,21 @@ bool string_prefixes_string(const char *proposed_prefix, const char *value) {
     return true;
 }
 
+bool string_prefixes_string(wcstring_view proposed_prefix, wcstring_view value) {
+    size_t prefix_size = proposed_prefix.size();
+    return prefix_size <= value.size() && value.compare(0, prefix_size, proposed_prefix) == 0;
+}
+
 bool string_prefixes_string_case_insensitive(const wcstring &proposed_prefix,
                                              const wcstring &value) {
     size_t prefix_size = proposed_prefix.size();
     return prefix_size <= value.size() &&
            wcsncasecmp(proposed_prefix.c_str(), value.c_str(), prefix_size) == 0;
+}
+
+bool string_prefixes_string_case_insensitive(wcstring_view proposed_prefix, wcstring_view value) {
+    size_t prefix_size = proposed_prefix.size();
+    return prefix_size <= value.size() && wcsncasecmp(proposed_prefix.data(), value.data(), prefix_size) == 0;
 }
 
 bool string_suffixes_string(const wcstring &proposed_suffix, const wcstring &value) {
@@ -1947,6 +1957,12 @@ bool string_suffixes_string(const wchar_t *proposed_suffix, const wcstring &valu
     size_t suffix_size = std::wcslen(proposed_suffix);
     return suffix_size <= value.size() &&
            value.compare(value.size() - suffix_size, suffix_size, proposed_suffix) == 0;
+}
+
+bool string_suffixes_string(wcstring_view proposed_suffix, wcstring_view value) {
+    size_t suffix_size = proposed_suffix.size();
+    return suffix_size <= value.size() &&
+    value.compare(value.size() - suffix_size, suffix_size, proposed_suffix) == 0;
 }
 
 bool string_suffixes_string_case_insensitive(const wcstring &proposed_suffix,
@@ -2465,7 +2481,7 @@ void redirect_tty_output() {
 bool valid_var_name_char(wchar_t chr) { return fish_iswalnum(chr) || chr == L'_'; }
 
 /// Test if the given string is a valid variable name.
-bool valid_var_name(const wcstring &str) {
+bool valid_var_name(wcstring_view str) {
     return std::find_if_not(str.begin(), str.end(), valid_var_name_char) == str.end();
 }
 

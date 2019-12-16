@@ -142,7 +142,7 @@ static bool is_universal_safe_to_encode_directly(wchar_t c) {
 }
 
 /// Escape specified string.
-static wcstring full_escape(const wcstring &in) {
+static wcstring full_escape(wcstring_view in) {
     wcstring out;
     for (wchar_t c : in) {
         if (is_universal_safe_to_encode_directly(c)) {
@@ -252,13 +252,13 @@ static wcstring encode_serialized(const wcstring_list_t &vals) {
 env_universal_t::env_universal_t(wcstring path)
     : narrow_vars_path(wcs2string(path)), explicit_vars_path(std::move(path)) {}
 
-maybe_t<env_var_t> env_universal_t::get(const wcstring &name) const {
+maybe_t<env_var_t> env_universal_t::get(wcstring_view name) const {
     var_table_t::const_iterator where = vars.find(name);
     if (where != vars.end()) return where->second;
     return none();
 }
 
-maybe_t<env_var_t::env_var_flags_t> env_universal_t::get_flags(const wcstring &name) const {
+maybe_t<env_var_t::env_var_flags_t> env_universal_t::get_flags(wcstring_view name) const {
     var_table_t::const_iterator where = vars.find(name);
     if (where != vars.end()) {
         return where->second.get_flags();
@@ -266,35 +266,35 @@ maybe_t<env_var_t::env_var_flags_t> env_universal_t::get_flags(const wcstring &n
     return none();
 }
 
-void env_universal_t::set_internal(const wcstring &key, const env_var_t &var) {
+void env_universal_t::set_internal(wcstring_view key, const env_var_t &var) {
     ASSERT_IS_LOCKED(lock);
     bool new_entry = vars.count(key) == 0;
-    env_var_t &entry = vars[key];
+    env_var_t &entry = vars[wcstring(key)];
     if (new_entry || entry != var) {
         entry = var;
-        this->modified.insert(key);
+        this->modified.insert(wcstring(key));
         if (entry.exports()) export_generation += 1;
     }
 }
 
-void env_universal_t::set(const wcstring &key, env_var_t var) {
+void env_universal_t::set(wcstring_view key, env_var_t var) {
     scoped_lock locker(lock);
     this->set_internal(key, std::move(var));
 }
 
-bool env_universal_t::remove_internal(const wcstring &key) {
+bool env_universal_t::remove_internal(wcstring_view key) {
     ASSERT_IS_LOCKED(lock);
     auto iter = this->vars.find(key);
     if (iter != this->vars.end()) {
         if (iter->second.exports()) export_generation += 1;
         this->vars.erase(iter);
-        this->modified.insert(key);
+        this->modified.insert(wcstring(key));
         return true;
     }
     return false;
 }
 
-bool env_universal_t::remove(const wcstring &key) {
+bool env_universal_t::remove(wcstring_view key) {
     scoped_lock locker(lock);
     return this->remove_internal(key);
 }
@@ -889,7 +889,7 @@ bool env_universal_t::populate_1_variable(const wchar_t *input, env_var_t::env_v
     // Parse out the key and write into the map.
     storage->assign(str, colon - str);
     const wcstring &key = *storage;
-    (*vars)[key] = std::move(var);
+    (*vars)[wcstring(key)] = std::move(var);
     return true;
 }
 
