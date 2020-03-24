@@ -22,7 +22,7 @@ Synopsis
           [( -w | --wraps ) WRAPPED_COMMAND]...
           [( -n | --condition ) CONDITION]
           [( -d | --description ) DESCRIPTION]
-  complete ( -C [STRING] | --do-complete[=STRING] )
+  complete ( -X | --executables-only ) ( -C [STRING] | --do-complete[=STRING] )
 
 Description
 -----------
@@ -71,6 +71,8 @@ the fish manual.
 - ``-CSTRING`` or ``--do-complete=STRING`` makes complete try to find all possible completions for the specified string.
 
 - ``-C`` or ``--do-complete`` with no argument makes complete try to find all possible completions for the current command line buffer. If the shell is not in interactive mode, an error is returned.
+
+- ``-X`` or ``--executables-only`` can be given to make ``--do-complete`` only consider external commands, not functions, builtins or abbreviations.
 
 - ``-A`` and ``--authoritative`` no longer do anything and are silently ignored.
 

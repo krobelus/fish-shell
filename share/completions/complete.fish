@@ -13,6 +13,7 @@ complete -c complete -s d -l description -d "Description of completion" -x
 complete -c complete -s e -l erase -d "Remove completion"
 complete -c complete -s h -l help -d "Display help and exit"
 complete -c complete -s C -l do-complete -d "Print completions for a commandline specified as a parameter"
+complete -c complete -s X -l executables-only -d "Complete only external commands with -C"
 complete -c complete -s n -l condition -d "Completion only used if command has zero exit status" -x
 complete -c complete -s w -l wraps -d "Inherit completions from specified command" -xa '(__fish_complete_command)'
 

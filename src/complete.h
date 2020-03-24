@@ -104,9 +104,10 @@ class completion_t {
 using completion_list_t = std::vector<completion_t>;
 
 enum class completion_request_t {
-    autosuggestion,  // indicates the completion is for an autosuggestion
-    descriptions,    // indicates that we want descriptions
-    fuzzy_match,     // indicates that we don't require a prefix match
+    autosuggestion,   // indicates the completion is for an autosuggestion
+    descriptions,     // indicates that we want descriptions
+    fuzzy_match,      // indicates that we don't require a prefix match
+    external_command, // indicates that we don't want to complete functions, builtins or abbreviations
     COUNT
 };
 

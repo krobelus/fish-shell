@@ -122,13 +122,14 @@ int builtin_complete(parser_t &parser, io_streams_t &streams, wchar_t **argv) {
     const wchar_t *comp = L"", *desc = L"", *condition = L"";
     bool do_complete = false;
     bool have_do_complete_param = false;
+    bool executables_only = false;
     wcstring do_complete_param;
     wcstring_list_t cmd_to_complete;
     wcstring_list_t path;
     wcstring_list_t wrap_targets;
     bool preserve_order = false;
 
-    static const wchar_t *const short_options = L":a:c:p:s:l:o:d:fFrxeuAn:C::w:hk";
+    static const wchar_t *const short_options = L":a:c:p:s:l:o:d:fFrxeuAn:C::w:hkX";
     static const struct woption long_options[] = {
         {L"exclusive", no_argument, nullptr, 'x'},
         {L"no-files", no_argument, nullptr, 'f'},
@@ -147,6 +148,7 @@ int builtin_complete(parser_t &parser, io_streams_t &streams, wchar_t **argv) {
         {L"condition", required_argument, nullptr, 'n'},
         {L"wraps", required_argument, nullptr, 'w'},
         {L"do-complete", optional_argument, nullptr, 'C'},
+        {L"executables-only", no_argument, nullptr, 'X'},
         {L"help", no_argument, nullptr, 'h'},
         {L"keep-order", no_argument, nullptr, 'k'},
         {nullptr, 0, nullptr, 0}};
@@ -247,6 +249,10 @@ int builtin_complete(parser_t &parser, io_streams_t &streams, wchar_t **argv) {
                 if (have_do_complete_param) do_complete_param = w.woptarg;
                 break;
             }
+            case 'X': {
+                executables_only = true;
+                break;
+            }
             case 'h': {
                 builtin_print_help(parser, streams, cmd);
                 return STATUS_CMD_OK;
@@ -269,6 +275,12 @@ int builtin_complete(parser_t &parser, io_streams_t &streams, wchar_t **argv) {
     if (result_mode.no_files && result_mode.force_files) {
         streams.err.append_format(BUILTIN_ERR_COMBO2, L"complete",
                                   L"'--no-files' and '--force-files'");
+        return STATUS_INVALID_ARGS;
+    }
+
+    if (executables_only && !do_complete) {
+        streams.err.append_format(BUILTIN_ERR_COMBO3, L"complete",
+        L"'--executables-only'", L"'--do-complete'");
         return STATUS_INVALID_ARGS;
     }
 
@@ -347,8 +359,12 @@ int builtin_complete(parser_t &parser, io_streams_t &streams, wchar_t **argv) {
             if (!have_do_complete_param)
                 parser.libdata().builtin_complete_current_commandline = true;
 
+            completion_request_flags_t complete_flags = {completion_request_t::fuzzy_match};
+            if (executables_only) {
+                complete_flags |= completion_request_t::external_command;
+            }
             completion_list_t comp =
-                complete(do_complete_param, completion_request_t::fuzzy_match, parser.context());
+                complete(do_complete_param, complete_flags, parser.context());
 
             for (const auto &next : comp) {
                 // Make a fake commandline, and then apply the completion to it.

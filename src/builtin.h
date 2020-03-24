@@ -42,6 +42,9 @@ enum { COMMAND_NOT_BUILTIN, BUILTIN_REGULAR, BUILTIN_FUNCTION };
 /// Error message on invalid combination of options.
 #define BUILTIN_ERR_COMBO2 _(L"%ls: Invalid combination of options,\n%ls\n")
 
+/// Error message on invalid combination of options.
+#define BUILTIN_ERR_COMBO3 _(L"%ls: Option %ls requires %ls\n")
+
 /// Error message on multiple scope levels for variables.
 #define BUILTIN_ERR_GLOCAL \
     _(L"%ls: Variable scope can only be one of universal, global and local\n")

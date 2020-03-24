@@ -339,6 +339,8 @@ class completer_t {
 
     bool fuzzy() const { return flags & completion_request_t::fuzzy_match; }
 
+    bool external_commands_only() const { return flags & completion_request_t::external_command; }
+
     fuzzy_match_type_t max_fuzzy_match_type() const {
         // If we are doing fuzzy matching, request all types; if not request only prefix matching.
         if (fuzzy()) return fuzzy_match_none;
@@ -695,6 +697,8 @@ void completer_t::complete_cmd(const wcstring &str_cmd) {
             ctx);
     UNUSED(ignore);
 
+    if (external_commands_only()) return;
+
     if (str_cmd.empty() || (str_cmd.find(L'/') == wcstring::npos && str_cmd.at(0) != L'~')) {
         bool include_hidden = !str_cmd.empty() && str_cmd.at(0) == L'_';
         wcstring_list_t names = function_get_names(include_hidden);
@@ -714,6 +718,7 @@ void completer_t::complete_cmd(const wcstring &str_cmd) {
 }
 
 void completer_t::complete_abbr(const wcstring &cmd) {
+    if (external_commands_only()) return;
     std::map<wcstring, wcstring> abbrs = get_abbreviations(ctx.vars);
     completion_list_t possible_comp;
     possible_comp.reserve(abbrs.size());
