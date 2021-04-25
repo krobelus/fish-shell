@@ -57,6 +57,10 @@ clean:
 test: build/fish
 	$(CMAKE) --build build --target test
 
+.PHONY: test-fishscript
+test-fishscript: build/fish
+	$(CMAKE) --build build --target test_fishscript
+
 .PHONY: install
 install: build/fish
 	$(CMAKE) --build build --target install

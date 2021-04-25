@@ -48,6 +48,9 @@ jobs:
     - name: make
       run: |
         make
+    - name: make test-fishscript
+      run: |
+        make test-fishscript
     - name: make test
       run: |
         make test

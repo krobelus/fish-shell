@@ -18,6 +18,7 @@ if set -q argv[1]
 else
     set files_to_test checks/*.fish
 end
+set files_to_test checks/tmux-complete.fish
 
 # test_util handles the environment setup and then restarts us
 source test_util.fish (status -f) $argv
