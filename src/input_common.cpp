@@ -49,18 +49,22 @@ enum {
     // select() was interrupted by a signal.
     readb_interrupted = -2,
 
-    // Our uvar notifier reported a change (either through poll() or its fd).
-    readb_uvar_notified = -3,
-
     // Our ioport reported a change, so service main thread requests.
-    readb_ioport_notified = -4,
+    readb_ioport_notified = -3,
 };
-using readb_result_t = int;
+
+struct readb_result_t {
+    int readb_result = 0;
+
+    // Our uvar notifier reported a change (either through poll() or its fd).
+    bool uvar_notified = false;
+};
 
 static readb_result_t readb(int in_fd) {
     assert(in_fd >= 0 && "Invalid in fd");
     universal_notifier_t& notifier = universal_notifier_t::default_notifier();
     select_wrapper_t fdset;
+    readb_result_t result;
     for (;;) {
         fdset.clear();
         fdset.add(in_fd);
@@ -85,10 +89,12 @@ static readb_result_t readb(int in_fd) {
         if (select_res < 0) {
             if (errno == EINTR || errno == EAGAIN) {
                 // A signal.
-                return readb_interrupted;
+                result.readb_result = readb_interrupted;
+                return result;
             } else {
                 // Some fd was invalid, so probably the tty has been closed.
-                return readb_eof;
+                result.readb_result = readb_eof;
+                return result;
             }
         }
 
@@ -98,7 +104,7 @@ static readb_result_t readb(int in_fd) {
         // This may come about through readability, or through a call to poll().
         if (notifier.poll() ||
             (fdset.test(notifier_fd) && notifier.notification_fd_became_readable(notifier_fd))) {
-            return readb_uvar_notified;
+            result.uvar_notified = true;
         }
 
         // Check stdin.
@@ -106,16 +112,19 @@ static readb_result_t readb(int in_fd) {
             unsigned char arr[1];
             if (read_blocked(in_fd, arr, 1) != 1) {
                 // The terminal has been closed.
-                return readb_eof;
+                result.readb_result = readb_eof;
+                return result;
             }
             // The common path is to return a (non-negative) char.
-            return static_cast<int>(arr[0]);
+            result.readb_result = static_cast<int>(arr[0]);
+            return result;
         }
 
         // Check for iothread completions only if there is no data to be read from the stdin.
         // This gives priority to the foreground.
         if (fdset.test(ioport_fd)) {
-            return readb_ioport_notified;
+            result.readb_result = readb_ioport_notified;
+            return result;
         }
     }
 }
@@ -167,7 +176,12 @@ char_event_t input_event_queue_t::readch() {
             return mevt.acquire();
         }
 
-        readb_result_t rr = readb(in_);
+        readb_result_t result = readb(in_);
+        if (result.uvar_notified) {
+            env_universal_barrier();
+        }
+
+        int rr = result.readb_result;
         switch (rr) {
             case readb_eof:
                 return char_event_type_t::eof;
@@ -175,10 +189,6 @@ char_event_t input_event_queue_t::readch() {
             case readb_interrupted:
                 // FIXME: here signals may break multibyte sequences.
                 this->select_interrupted();
-                break;
-
-            case readb_uvar_notified:
-                env_universal_barrier();
                 break;
 
             case readb_ioport_notified:
