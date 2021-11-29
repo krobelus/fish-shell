@@ -276,7 +276,7 @@ int parse_util_locate_cmdsubst_range(const wcstring &str, size_t *inout_cursor_o
         // the next command substitution - (C) - and not about the B part, just advance the
         // cursor to the closing quote.
         if (auto *q_end = quote_end(bracket_range_end, L'"')) {
-            *inout_cursor_offset = 1 + q_end - buff;
+            *inout_cursor_offset = q_end - buff;
         } else {
             if (accept_incomplete) {
                 // We want to skip quoted text, so if there is no closing quote, skip to the end.
@@ -949,12 +949,16 @@ parser_test_error_bits_t parse_util_detect_errors_in_argument(const ast::argumen
     size_t cursor = 0;
     wcstring subst;
 
+    wcstring *src = const_cast<wcstring *>(&arg_src);
+    wcstring src_copy;
+
     bool do_loop = true;
+    bool is_quoted = false;
     while (do_loop) {
         size_t paren_begin = 0;
         size_t paren_end = 0;
-        switch (parse_util_locate_cmdsubst_range(arg_src, &cursor, &subst, &paren_begin, &paren_end,
-                                                 false)) {
+        switch (parse_util_locate_cmdsubst_range(*src, &cursor, &subst, &paren_begin, &paren_end,
+                                                 false, &is_quoted)) {
             case -1: {
                 err |= PARSER_TEST_ERROR;
                 if (out_errors) {
@@ -979,6 +983,13 @@ parser_test_error_bits_t parse_util_detect_errors_in_argument(const ast::argumen
 
                 if (out_errors != nullptr) {
                     out_errors->insert(out_errors->end(), subst_errors.begin(), subst_errors.end());
+                }
+
+                if (is_quoted && cursor + 1 < src->size() && src->at(cursor) == L'$' &&
+                    src->at(cursor + 1) == L'(') {
+                    src_copy = arg_src;
+                    src = &src_copy;
+                    src->insert(cursor, L"\"");
                 }
                 break;
             }
