@@ -1,7 +1,7 @@
 # Visual Studio Code
 
 function __fish_complete_vscode_extensions
-    command --quiet code; and code --list-extensions
+    code --list-extensions
 end
 
 complete -c code -s d -l diff -d 'Compare two files with each other'
@@ -21,7 +21,7 @@ complete -c code -l file-uri -d 'Opens a window with given file uri(s)'
 complete -c code -l extensions-dir -d 'Set the root path for extensions'
 complete -c code -l list-extensions -d 'List the installed extensions'
 complete -c code -l show-versions -d 'Show versions of installed extensions' -n '__fish_seen_argument -l list-extensions'
-complete -c code -l install-extension -xa "(__fish_complete_vscode_extensions)" -d 'Installs or updates the extension'
+complete -c code -l install-extension -ra "(__fish_complete_vscode_extensions)" -d 'Installs or updates the extension'
 complete -c code -l force -n '__fish_seen_argument -l install-extension' -d 'Avoid prompts when installing'
 complete -c code -l enable-proposed-api -xa "(__fish_complete_vscode_extensions)" -d 'Enables proposed API features for extensions'
 complete -c code -l uninstall-extension -xa "(__fish_complete_vscode_extensions)" -d 'Uninstall extension'
