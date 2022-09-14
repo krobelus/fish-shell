@@ -284,7 +284,7 @@ void editable_line_t::push_edit(edit_t &&edit, bool allow_coalesce) {
                                   undo_history_.edits.end());
     }
     edit.cursor_position_before_edit = position();
-    edit.old = text_.substr(edit.offset, edit.length);
+    edit.old = text().substr(edit.offset, edit.length);
     apply_edit(&text_, edit);
     set_position(cursor_position_after_edit(edit));
     assert(undo_history_.edits_applied == undo_history_.edits.size());
