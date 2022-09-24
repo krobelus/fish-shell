@@ -1,0 +1,9 @@
+None:None: 𑁍 84574876
+ ed67f2d22 Drop a now-incorrect check test from `checks/git.fish`
+ ? no file 'None' in ed67f2d221b187a1e1b198d94eb679b5ceb40fe1~..ed67f2d221b187a1e1b198d94eb679b5ceb40fe1
+	[faho] It's fine to just leave this out.
+
+		Also @mqudsi: please don't @ people in commit messages, github will then sometimes decide to renotify you because of a fork.
+	[mqudsi] Sure, and sorry - I’ve had that happen to me and should have known better.
+
+𑁍
