@@ -1,0 +1,12 @@
+	[61746187] What does * do, and why do we use it?
+		I'm not sure about applying this incrementally, since it leaves the documentation in an inconsistent state.
+		Why not just fix all synopses in one commit? (if they need fixing)
+		And then do all "``$LANG``" -> ":envvar:`LANG`" in the next commit, and the table change (with `|`) in another commit etc.
+
+		Currently, I can't easily tell if these changes are a good idea because there is no (single) commit message to explain.
+
+		I'm sure they're good changes, but I'd love to know why, so I can get things right in future. For example when to use double backticks or  double star?
+
+		If we're in an inconsistent state, a doc_src/README would maybe help but it's better if we don't need to think about it.
+
+	[61746188] the strip is unused, right?
