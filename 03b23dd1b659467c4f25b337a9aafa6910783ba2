@@ -1,0 +1,118 @@
+	[page-down] @floam
+
+		Is the original intent of this one to use the default theme colors?
+
+		`share/tools/web_config/themes/fish default.theme`
+		Perhaps some of the recent improvements could be updated on that default theme as well, but keeping the HEX color values.
+
+		I think there should also be a default theme that uses color names to give the user a chance to reset to this.
+		I like this latest default, where the colors configured by the user in the terminal can take effect.
+		Thanks.
+	[floam] This is supposed to be the default theme, yes. It used to be defined in terms of named colors but something happened at some point.
+	[floam] https://github.com/fish-shell/fish-shell/commit/a6031c42bfdcdfdea33c35303d8c932a08b2e7a7
+	[floam] Is there a reason the web config should use hex colors?
+	[page-down] > Is there a reason the web config should use hex colors?
+
+		I mean, it would be possible to update `fish default.theme` to this latest default, and keep the previous one perhaps as `fish legacy default.theme` (or a better name).
+
+		To be honest, I quite liked the previous colors (unaffected by the terminal color scheme).
+
+		(However, this doesn't make sense, because you want the terminal color scheme to be as consistent as possible with the fish color scheme, and that's what this commit is about.)
+
+		I have no subjective opinion, just such an idea.
+	[floam] Is there any particular prior setting you'd really like back as the default? Perhaps something that was not expressible as one of the 16 ansi colors or a mistake I made? This wasn't really supposed to be super perceivable except for the pager stuff which has been in flux lately to try to make it nicer for black on white.
+	[floam] The default should be (was always) defined in terms of named colors, so that out of the box you didn't even need to assume a 256-color terminal. It should work on a simple Linux VT. However, it's possible to set a preferred hex color and then a fallback, like is done for `555 brblack`.
+	[page-down] I like your recent changes. I didn't find any particular issues.
+
+		Or I express it this way.
+		I think fish is software with opinions, so it can also come with a default theme with representational colors.
+		(Many GUI software, which also has a visual design kit, expresses their own brand.)
+		I, as a user, would like to use the fish theme as a reference to modify the theme of the terminal.
+		If these are removed, the specific default fixed theme colors are lost.
+
+		Sorry, I may not have expressed my points accurately.
+
+		Or maybe I misunderstood and there was never such a thing. It can be there later, but at least not yet.
+	[faho] > It should work on a simple Linux VT
+
+		@floam: To be clear: It does. Whatever colors you give here work, because in the end we map even given RGB values to named colors if we can't use the RGB sequences.
+
+		What naming colors does is make the colors *track* the terminal's color settings. This means if you e.g. swap your terminal palette to Solarized the theme will appear differently. So a color called "red" may appear in some shade of red or even entirely differently. Could be blue, could be green, could be the same as black (and hence not contrast against it, which breaks whenever you use red-on-black).
+
+		If you want to find out the history here, you'll have to check git, I have no specific memory of switching this to hex (but I believe at one point webconfig ended up transferring the colors as hex, so we might have switched so it ends up with the same colors).
+
+		However: Do please also adjust the .theme.
+	[page-down] > So a color called "red" may appear in some shade of red or even entirely differently.
+		> ... and hence not contrast against it, ...
+
+		Yes, I'm having this exact trouble.
+
+		```text
+		fish_pager_color_progress brwhite --background=cyan
+		```
+
+		This one doesn't have enough contrast on the theme I'm using.
+		(Of course this is a issue with my theme. It is not fish that causes the problem.)
+	[floam] > If you want to find out the history here, you'll have to check git,
+
+		I linked the history - see https://github.com/fish-shell/fish-shell/commit/a6031c42bfdcdfdea33c35303d8c932a08b2e7a7.
+
+		> @floam: To be clear: It does. Whatever colors you give here work, because in the end we map even given RGB values to named colors if we can't use the RGB sequences.
+
+		I think you're mistaken. We have no code to find a nearest named color AFAIK.
+	[floam] (unless these values were all exactly magic numbers we do try to match.)
+	[floam] Huh, well we do… something. I'm not sure if it's exactly right. With TERM=linux:
+
+		```
+		~/f/fish-shell (master)> set_color 00a6b2|vis
+		\^[[36m⏎
+		~/f/fish-shell (master)> set_color ff0000|vis
+		\^[[31m⏎
+		~/f/fish-shell (master)> set_color 990000|vis
+		\^[[31m⏎
+		~/f/fish-shell (master)> set_color 00afff|vis
+		\^[[36m⏎
+		~/f/fish-shell (master)> set_color 00afff|vis
+		\^[[36m⏎
+		~/f/fish-shell (master)> set_color 005fd7|vis
+		\^[[36m⏎
+		```
+
+		That's a lot of different colors mapping to 36m.
+	[faho] >I linked the history - see a6031c4.
+
+		Okay, so we should probably make sure those colors are the same again, by adjusting the .theme file. Or alternatively make both rgb again.
+
+		>I think you're mistaken. We have no code to find a nearest named color AFAIK.
+
+		https://github.com/fish-shell/fish-shell/blob/a03e245e13884f1bd0320b6be1c06c1f81367b69/src/color.cpp#L290-L320
+
+		https://github.com/fish-shell/fish-shell/blob/a03e245e13884f1bd0320b6be1c06c1f81367b69/src/color.cpp#L268-L288
+
+		https://github.com/fish-shell/fish-shell/blob/a03e245e13884f1bd0320b6be1c06c1f81367b69/src/color.cpp#L190-L202
+
+		>That's a lot of different colors mapping to 36m.
+
+		I mean... yes? There are 16 named colors (8 excluding bright versions), there are 256^3 RGB colors? So that's about a million rgb colors mapping to one named color?
+	[floam] I think we're only resolving to like eight of them.
+	[faho] Okay. None of this is important.
+
+		We manage to not break horribly if the color space is reduced, that's the important bit. So we *can* use RGB colors in the colorscheme, which allows us to avoid the contrast problem with the palette.
+	[floam] Okay, that's just an unrelated bug: the code I thought I added years ago to make TERM=linux do brights with bold even for num_colors of 8 isn't kicking in.
+	[floam] (even set_color red and set_color brred are the same - it's unrelated and the stuff under discussion seems to work right.)
+	[floam] I will adjust the theme to match but I'd like to know the ideal fix for a potential contrast issue is in place before we release. I really want the default theme to be extremely reasonable everywhere possible. Is this not looking good for regular terminal setups?
+	[faho] >the ideal fix for a potential contrast issue is in place before we release
+
+		The only possible general fix is to use RGB. That will work on supporting terminals. There is no contrast fix without RGB. If someone sets "red" to be "white" the only thing you can do is to not play. There is no contrast guarantee whatsoever with the palette.
+
+		I'm not sure how well this currently works if you just check *common* palette sets like the various terminal defaults and Solarized and such.
+
+		Personally, I would prefer returning to rgb colors, and then replacing all named colors that remain with their rgb counterparts from our assumed palette.
+	[floam] Except on not dumb terminals, those RGB colors won't actually use the canonical index. Even when they're exactly bit for bit FF0000 (brred or something).
+	[faho] Using rgb colors on supporting terminals means using rgb colors, yes. You give the color, the terminal gets the color.
+
+		We don't go through the palette if we can just give the color, because the palette, as established, gives us no guarantees whatsoever. We can't rely on the palette because the palette is entirely arbitrary colors.
+
+		This is how using RGB colors *fixes* the contrast problem: By simply specifying the colors you want, instead of going through a layer of arbitrary indirection.
+	[faho] Okay, I have now updated the .theme file (and removed the function again).
+	[floam] Oh nice, thanks.
