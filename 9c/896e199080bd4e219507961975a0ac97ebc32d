@@ -1,0 +1,6 @@
+None:None: 𑁍 81787982
+ 9c896e199 Stop using posix_spawn when it is not allowed
+ ? no file 'None' in 9c896e199080bd4e219507961975a0ac97ebc32d~..9c896e199080bd4e219507961975a0ac97ebc32d
+	[floam] I don't get how and where g_use_posix_spawn got set true.
+
+𑁍
