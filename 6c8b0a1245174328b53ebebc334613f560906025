@@ -1,0 +1,5 @@
+	[floam] ```
+		        # OpenBSD ships a command called "colorls" that takes "-G" and "-F",
+		        # but there's also a ruby implementation that doesn't understand "-F".
+		        # Since that one's quite different, don't use it.
+		```
