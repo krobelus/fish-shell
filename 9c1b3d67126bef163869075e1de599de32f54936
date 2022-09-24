@@ -1,0 +1,2 @@
+	[70895394] This looks like a [cppcheck false positive](https://trac.cppcheck.net/ticket/10732)
+		We should probably just disable this particular lint for cppcheck. Compilers should be smart enough to detect missing return statements.
