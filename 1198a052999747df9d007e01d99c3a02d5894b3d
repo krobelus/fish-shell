@@ -1,0 +1,1 @@
+	[floam] I introduced those `likely()` and `unlikely()` macros a while back, and I think I became kind of perplexed when the codegen didn't seem to change much when I applied it for our `assert`, which it was actually for. I think the recent include-rejiggering solved that, or prompted me to reassess: yeah it makes a difference now.
