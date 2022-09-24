@@ -1,0 +1,16 @@
+	[floam] Not sure why this was reverted, if anything the docs should do the same thing here. You can omit the Arial, Helvetica if you think that's too explicit. See https://github.com/necolas/normalize.css/issues/665 for the Blink and Roboto rationalization.
+	[floam] I did forget to remove that comment citing the docs.
+	[faho] See the next commit: https://github.com/fish-shell/fish-shell/commit/25e02ea07f8210308a281c01b4b31fdae6836e66
+	[floam] Right, I thought what it had was better than `"Segoe UI", system-ui, sans-serif;`. Oh well
+	[floam] (where the goal is more "I want the system UI font" than "I don't want a horrible sans-serif".)
+	[faho] Note:
+
+		> See https://github.com/necolas/normalize.css/issues/665 for the Blink and Roboto rationalization.
+
+		That rationale is from 2017. There is no need for it anymore. The font list we use now uses the system font with a single font as an exception, as a workaround for what is arguably a bug. For monospace that's not possible, unfortunately, for reasons explained in the docs theme.
+
+		Really, the docs fonts are doing the right thing, this should be doing the same thing, now it is.
+
+		>Right, I thought what it had was better than "Segoe UI", system-ui, sans-serif;. Oh well
+
+		Listing more fonts is **worse**, not better.
