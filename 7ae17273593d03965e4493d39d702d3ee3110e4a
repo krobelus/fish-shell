@@ -1,0 +1,2 @@
+	[zanchey] Unfortunately this broke the build on older platforms which are using PCRE2 < 10.35, as `PCRE2_SUBSTITUTE_LITERAL` is not available there (Debian 10, CentOS 7 & 8, OpenSUSE Leap 15.3).
+	[ridiculousfish] Hmm looks like my Docker images don't have PCRE2 installed so they were fetching it. Anyways fixed in a9964cd6d046c8562ccf55586fb6087812b2b573, sorry for breakage
