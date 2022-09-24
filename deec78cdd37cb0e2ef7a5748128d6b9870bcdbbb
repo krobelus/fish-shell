@@ -1,0 +1,2 @@
+	[80538524] FWIW Git 2.35 no longer exports GIT_WORK_TREE and GIT_DIR to `rebase -x`, see
+		https://github.com/gitster/git/commit/434e0636db102cd89292ea28e8e947fa6e790b23
