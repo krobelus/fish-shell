@@ -1,0 +1,3 @@
+	[floam] As opposed to just immediately detaching after `pthread_create()`. There's no performance benefit at least on Darwin but it seems more proper.
+	[ridiculousfish] Nice, I didn't know about `pthread_attr_setdetachstate`.
+	[floam] probably `pthread_attr_destroy` should happen regardless of `pthread_create`'s success it occurs to me
