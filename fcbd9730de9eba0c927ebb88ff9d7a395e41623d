@@ -1,0 +1,4 @@
+	[floam] > because I can't be bothered to check for unicode support
+
+		We actually stick a raw ellipsis char into the output elsewhere in this completion.
+	[floam] ce55114e38b044e483c7f50a29198362c0bff469
