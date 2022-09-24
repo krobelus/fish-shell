@@ -1,0 +1,52 @@
+	[faho] This is not the same thing.
+
+		1. It operates on the *logical* $PWD, and so wouldn't match what vagrant actually sees
+		2. It'll go down *all* the parent directories even if just one is necessary.
+
+		At the very least it needs `pwd -P` instead of `$PWD`.
+	[faho] Wait no it's worse. This only checks if one of the parent directories *is* ".vagrant", not if it *contains* a .vagrant directory.
+
+		So if /tmp/.vagrant existed, it would work in /tmp/.vagrant/foo, but not in /tmp/bar/baz
+	[floam] Is /tmp/bar/baz a thing that'll occur? Would you prefer reverting this or adjusting __fish_parent_directories - this is actually just the second user of that.
+	[faho] That is not just a thing that would occur, that's the typical case!
+
+		This is like a ".git" directory. You want any of the parent directories to *contain* a ".git" directory. That's the logic we need here.
+
+		Being inside .vagrant is like being inside .git - something that happens very rarely.
+
+		>adjusting __fish_parent_directories
+
+		So, __fish_parent_directories, as far as I can tell, simply prints "all the parent directories". If you have /home/me/dev/fish-shell, it will print "/home", "/home/me" and "/home/me/dev". That's generally a sensible self-contained thing. It doesn't glob, but that's okay. It allows you to iterate over all the parents easily.
+
+		That part would work if you only passed the physical pwd instead of $PWD (which is logical since 3.0, IIRC). So you get the path with symlinks resolved and stuff, and then you go through that, and it'll match an external applications view and everything is fine. Passing the logical $PWD breaks because that's not what an external application (or the kernel) sees.
+
+		Your breakage with /tmp/bar/baz is the `string match '*/.vagrant' $dir`. That just checks if the directory ends in "/.vagrant", which is why it doesn't actually look for a ".vagrant" directory inside it.
+	[floam] > Your breakage with /tmp/bar/baz is the string match '*/.vagrant' $dir. That just checks if the directory ends in "/.vagrant", which is why it doesn't actually look for a ".vagrant" directory inside it.
+
+		You are blowing my mind. The function lists all of the directories under the given directory. If there is a '.vagrant' directory inside we want, it will necessarily be at the end of the string. I must really be missing something.
+
+		```
+		floam@MBP ~> cd test/.vagrant/foo/bar/.vagrant/
+		floam@MBP ~/t/.v/f/b/.vagrant> __fish_parent_directories $PWD
+		/Users/floam/test/.vagrant/foo/bar/.vagrant
+		/Users/floam/test/.vagrant/foo/bar
+		/Users/floam/test/.vagrant/foo
+		/Users/floam/test/.vagrant
+		/Users/floam/test
+		/Users/floam
+		/Users
+		```
+
+		the edited code will print out `/Users/floam/test/.vagrant/foo/bar/.vagrant`, just like the original code.
+	[floam] If I'm being dumb, please just revert the commit, but I honestly don't see where the mistake is, still.
+	[faho] The case where you are directly under the .vagrant directory isn't what we're concerned about.
+
+		It's the case where you are under a directory that's *next* to the vagrant directory.
+
+		The lookup vagrant does here is the same thing that git does to find its .git directory.
+
+		Say your clone of the fish-shell repo is in ~/dev/fish-shell. You go to ~/dev/fish-shell/share/completions. Git finds its .git directory in ~/dev/fish-shell/.git. You run `__fish_parent_directories ~/dev/fish-shell/share/completions` and you don't get that one, because it's not a parent directory. It's *next* to one of the parent directories (and under another).
+
+		Now just replace "git" with "vagrant".
+	[floam] Doh.
+	[floam] I've reverted the commit, thanks for explaining.
