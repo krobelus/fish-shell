@@ -1,0 +1,27 @@
+	[zanchey] I regret to inform you that "That's wrong and breaks and you should never do it".
+
+		```
+		In file included from /usr/include/stdlib.h:42:0,
+		                 from /usr/include/c++/4.8/cstdlib:72,
+		                 from /usr/include/c++/4.8/ext/string_conversions.h:41,
+		                 from /usr/include/c++/4.8/bits/basic_string.h:2815,
+		                 from /usr/include/c++/4.8/string:52,
+		                 from /usr/include/c++/4.8/stdexcept:39,
+		                 from /usr/include/c++/4.8/array:38,
+		                 from /usr/include/c++/4.8/tuple:39,
+		                 from /usr/include/c++/4.8/functional:55,
+		                 from /usr/include/c++/4.8/memory:79,
+		                 from /home/abuild/rpmbuild/BUILD/fish-3.5.1-130-g4f1c62ff4/src/autoload.h:8,
+		                 from /home/abuild/rpmbuild/BUILD/fish-3.5.1-130-g4f1c62ff4/src/autoload.cpp:4:
+		/home/abuild/rpmbuild/BUILD/fish-3.5.1-130-g4f1c62ff4/src/proc.h:76:7: error: operator '*' has no left operand
+		 #elif WEXITSTATUS(0x007f) == 0x7f
+		       ^
+		```
+
+		In glibc 2.22, the macro excitingly expands to `((((*(int *) &(status)) ) & 0xff00) >> 8)`, which isn't valid as a preprocessor comparison. This was removed in b49ab5f4503f36dcbf43f821f817da66b2931fe6 on account of it blowing (other) things up.
+	[faho] So let's take the long way around then - bcd84c6908578a9cca6611778f65eaed0db0acc5
+	[79282287] we could still do it in this function, only without the preprocessor.
+		Might need to lose the constexpr until C++17 or so.
+
+		BTW `static_assert` without a message argument might break on stdlibs that don't support this part of C++17, see https://en.cppreference.com/w/cpp/language/static_assert
+	[faho] I hate C++ *soo much*
