@@ -1,0 +1,11 @@
+	[floam] Is https://lgtm.com/projects/g/fish-shell/fish-shell/snapshot/3ef00626560e05124dd1ceba0beaec36beabbc42/files/src/history_file.cpp?sort=name&dir=ASC&mode=heatmap#L160 a false positive?
+	[faho] size_t is at least 16 bits wide (since C99). So it can in fact be 32 bits or larger.
+
+		"unsigned long" must be capable of "containing at least the [0, 4,294,967,295] range" - i.e. 32 bits.
+
+		So when lgtm says the comparison is "always true", that might be true, but only on *that particular system*.
+
+		That's the problem with automated tools like that. They'll only look at their particular system, and with a cross-platform C++ project that's simply not complete.
+	[floam] The problem isn't that SIZE_MAX is the largest number representable by `size_t`, but `off_t` is a signed type?
+	[ridiculousfish] The problem is that `off_t` may store a value larger than `SIZE_MAX`.
+	[floam] Oh, I thought it was 32bit on 32bit systems - I get it. Sorry.
