@@ -1,0 +1,130 @@
+	[61745524] How about this fix, or should we just go back to returning int (if that's less surprising)?
+
+		```patch
+		From 90de4848b3bedb817404725888b929fe2c6b7848 Mon Sep 17 00:00:00 2001
+		From: Johannes Altmanninger <aclopte@gmail.com>
+		Date: Sat, 11 Dec 2021 15:30:19 +0100
+		Subject: [PATCH] Fix regression in path_is_remote() wrongly assuming remote
+		 paths
+
+		Before e65405ef5 (int -> maybe_t<bool>, 2021-12-09), function
+		path_is_remote() returned a tristate int:
+		* -1 means "error"
+		*  0 means "path is local"
+		*  1 means "path is remote"
+
+		Above commit changed it to return maybe_t<bool>, which seems better
+		because the return value is more or less obvious. Unfortunately,
+		the usage is less obvious. What we previously wrote as
+
+			if (path_is_remote() == 1)
+				do_flock = false;
+
+		is now perhaps
+
+			if (path_is_remote() == maybe_t<bool>{true})
+				do_flock = false;
+
+		But we have
+
+			if (path_is_remote())
+				do_flock = false;
+
+		which means that every path that we can succesfully stat() is assumed remote.
+		Fix that, by using the correct check.
+
+		I also considered returning a bool, but should_mmap() needs the third state.
+		---
+		 src/env_universal_common.cpp |  2 +-
+		 src/history.cpp              |  2 +-
+		 src/history_file.cpp         |  4 ++--
+		 src/path.cpp                 | 11 ++++++-----
+		 4 files changed, 10 insertions(+), 9 deletions(-)
+
+		diff --git a/src/env_universal_common.cpp b/src/env_universal_common.cpp
+		index 71f64d308..19fba9bbb 100644
+		--- a/src/env_universal_common.cpp
+		+++ b/src/env_universal_common.cpp
+		@@ -501,7 +501,7 @@ void env_universal_t::initialize_at_path(callback_data_list_t &callbacks, wcstri
+		 void env_universal_t::initialize(callback_data_list_t &callbacks) {
+		     // Set do_flock to false immediately if the default variable path is on a remote filesystem.
+		     // See #7968.
+		-    if (path_get_config_is_remote()) do_flock = false;
+		+    if (path_get_config_is_remote() == maybe_t<bool>{true}) do_flock = false;
+		     this->initialize_at_path(callbacks, default_vars_path(), true /* migrate legacy */);
+		 }
+
+		diff --git a/src/history.cpp b/src/history.cpp
+		index 0d4022c18..51740f7d0 100644
+		--- a/src/history.cpp
+		+++ b/src/history.cpp
+		@@ -380,7 +380,7 @@ bool history_impl_t::maybe_lock_file(int fd, int lock_type) {
+		     // is on a remote filesystem.
+		     if (abandoned_locking) return false;
+		     if (history_t::chaos_mode) return false;
+		-    if (!path_get_data_is_remote()) return false;
+		+    if (path_get_data_is_remote() == maybe_t<bool>{true}) return false;
+
+		     double start_time = timef();
+		     int retval = flock(fd, lock_type);
+		diff --git a/src/history_file.cpp b/src/history_file.cpp
+		index 89db75da9..4cc313ecb 100644
+		--- a/src/history_file.cpp
+		+++ b/src/history_file.cpp
+		@@ -23,8 +23,8 @@ static maybe_t<size_t> offset_of_next_item_fish_1_x(const char *begin, size_t mm
+		 static bool should_mmap() {
+		     if (history_t::never_mmap) return false;
+
+		-    // mmap only if we are known not-remote (return is 0).
+		-    return path_get_data_is_remote() == 0;
+		+    // mmap only if we are known not-remote.
+		+    return path_get_data_is_remote() == maybe_t<bool>{false};
+		 }
+
+		 // Read up to len bytes from fd into address, zeroing the rest.
+		diff --git a/src/path.cpp b/src/path.cpp
+		index 5ba3b3eae..2db52326e 100644
+		--- a/src/path.cpp
+		+++ b/src/path.cpp
+		@@ -336,9 +336,10 @@ namespace {
+		 /// The following type wraps up a user's "base" directories, corresponding (conceptually if not
+		 /// actually) to XDG spec.
+		 struct base_directory_t {
+		-    wcstring path{};       /// the path where we attempted to create the directory.
+		-    maybe_t<bool> is_remote{none};/// 1 if the directory is remote (e.g. NFS), 0 if local, -1 if unknown.
+		-    int err{0};            /// the error code if creating the directory failed, or 0 on success.
+		+    wcstring path{};  /// the path where we attempted to create the directory.
+		+    maybe_t<bool> is_remote{
+		+        none()};  /// true if the directory is remote (e.g. NFS), false if local, none if unknown.
+		+    int err{0};   /// the error code if creating the directory failed, or 0 on success.
+		     bool success() const { return err == 0; }
+		     bool used_xdg{false};  /// whether an XDG variable was used in resolving the directory.
+		 };
+		@@ -394,7 +395,7 @@ void path_emit_config_directory_messages(env_stack_t &vars) {
+		         maybe_issue_path_warning(L"data", _(L"can not save history"), data.used_xdg,
+		                                  L"XDG_DATA_HOME", data.path, data.err, vars);
+		     }
+		-    if (data.is_remote) {
+		+    if (data.is_remote == maybe_t<bool>{true}) {
+		         FLOG(path, "data path appears to be on a network volume");
+		     }
+
+		@@ -404,7 +405,7 @@ void path_emit_config_directory_messages(env_stack_t &vars) {
+		                                  config.used_xdg, L"XDG_CONFIG_HOME", config.path, config.err,
+		                                  vars);
+		     }
+		-    if (config.is_remote) {
+		+    if (config.is_remote == maybe_t<bool>{true}) {
+		         FLOG(path, "config path appears to be on a network volume");
+		     }
+		 }
+		--
+		2.34.1
+
+		```
+	[floam] Oops. I'd probably just go back to how it was.
+	[floam] I'm going to apply your patch.
+	[61751836] either one works, but the `x == maybe_t{true}` trick wasn't so obvious to me at first (to come up with it, reading it is easy)
+	[61751964] BTW you can use `git am` for patches (while `git apply` is for diffs)
+	[floam] Thanks
+	[ridiculousfish] `maybe_t<bool>` is very error-prone so I switched to a real class enum in 0d67dd19a1336606049814b6e3f0e26f1e83c6a2
