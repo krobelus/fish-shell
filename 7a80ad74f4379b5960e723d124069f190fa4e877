@@ -1,0 +1,12 @@
+	[faho] What is this for? What is the issue here?
+
+		I would prefer not to have gratuitous ifdeffery. It's entirely acceptable to reinitialize locale one time too many *if* the user changes a var their system doesn't support. If it's not supported, nothing should happen.
+
+		And that is *if* this is actually purely a glibc thing, which I'm not convinced of.
+	[floam] These are environment variables recognized by glibc 2.2 and above; this keeps they from getting compiled into fish and from fish to having special behavior for them unless targeting that platform.
+	[faho] Why tho? This complicates the code, and the advantage is... next to nothing.
+	[floam] I'm not sure why fish needs to reset its locale subsystem to respond to LC_TELEPHONE, for what at all frankly, but this should be a well-researched correct way to do it that does not complicate the generated code for my platform or yours. The preprocessor macros are pretty clear - this is a platform thing unique to glibc 2.2 and above is my understanding.
+	[faho] We're talking about a few bytes here. If you want to make fish smaller, start elsewhere. This complication *in the source*, *plus* the platform-specific behavior isn't worth the savings in the generated code. Plus, like I alluded to earlier: I'm not convinced this is glibc-specific or will stay glibc-specific forever. That's the sort of investigation that we should do before we merge something like this, and if you've done it I don't see a mention - the commit message is "phew".
+
+		Alternatively: Pick the variables that affect fish. This includes LC_ALL, LANG, LANGUAGE, LC_MESSAGES, LC_COLLATE, LC_CTYPE and LOCPATH - not LC_NUMERIC anymore because we internally set that to C. Then simply use those variables *everywhere*. Just make that the list. Drop the awkward GLIBC check - of the "extensions" this only includes $LANGUAGE and $LOCPATH, both of which seem like reasonable things other libcs might also pick up, and both of which would affect fish.
+	[faho] f082b6c1bddb7805f2aed6a9192c5abce79a83e0 does that. Instead of doing platform-specific stuff, we just drop the vars we don't care about anywhere.
