@@ -1,0 +1,5 @@
+	[mqudsi] [strace.broken.log](https://github.com/fish-shell/fish-shell/files/9590568/strace.broken.log)
+		[strace.diff](https://github.com/fish-shell/fish-shell/files/9590569/strace.diff.log)
+		[strace.working.log](https://github.com/fish-shell/fish-shell/files/9590570/strace.working.log)
+
+		Attached the relevant portions of the output of strace runs before and after the patch as well as the diff between them, as observed under WSLv1, for future reference.
