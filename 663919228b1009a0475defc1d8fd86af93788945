@@ -1,0 +1,59 @@
+	[84919768] `last_option_requires_param` is redundant because this code path already requires (the equivalent)
+		`last_option_requires_param.has_value()`.
+		You probably mean `*last_option_requires_param && ...`?
+
+		As pointed out [here](https://github.com/fish-shell/fish-shell/commit/e65405ef52d72057d41ac5622e45d96ee2eedd13),
+		`maybe_t<bool>` is very error-prone, we should consider using an `enum class` instead, see below.
+
+		I also didn't get to the bottom of this.. you say your change prevents
+		`last_option_requires_param` from going from false to true but I fail to
+		see that. I'll try to construct a test later
+
+		```diff
+		diff --git a/src/complete.cpp b/src/complete.cpp
+		index 858c5a6ed..f756b2a04 100644
+		--- a/src/complete.cpp
+		+++ b/src/complete.cpp
+		@@ -857,7 +857,6 @@ bool completer_t::complete_param_for_command(const wcstring &cmd_orig, const wcs
+		     for (const option_list_t &options : all_options) {
+		         size_t short_opt_pos = short_option_pos(str, options);
+		-        // We want last_option_requires_param to default to false but distinguish between when
+		-        // a previous completion has set it to false and when it has its default value.
+		-        maybe_t<bool> last_option_requires_param{};
+		+        enum class requires_param { yes, no, no_option };
+		+        auto last_option_requires_param = requires_param::no_option;
+		         bool use_common = true;
+		         if (use_switches) {
+		@@ -877,11 +876,7 @@ bool completer_t::complete_param_for_command(const wcstring &cmd_orig, const wcs
+		                     if (this->conditions_test(o.conditions)) {
+		                         if (o.type == option_type_short) {
+		-                            // Only override a true last_option_requires_param value with a false one
+		-                            if (last_option_requires_param.has_value()) {
+		-                                last_option_requires_param =
+		-                                    last_option_requires_param && o.result_mode.requires_param;
+		-                            } else {
+		-                                last_option_requires_param = o.result_mode.requires_param;
+		-                            }
+		+                            last_option_requires_param = o.result_mode.requires_param
+		+                                                             ? requires_param::yes
+		+                                                             : requires_param::no;
+		                         }
+		                         if (arg != nullptr) {
+		@@ -947,9 +942,4 @@ bool completer_t::complete_param_for_command(const wcstring &cmd_orig, const wcs
+		         }
+
+		-        // Set a default value for last_option_requires_param only if one hasn't been set
+		-        if (!last_option_requires_param.has_value()) {
+		-            last_option_requires_param = false;
+		-        }
+		-
+		         // Now we try to complete an option itself
+		         for (const complete_entry_opt_t &o : options) {
+		@@ -978,5 +968,5 @@ bool completer_t::complete_param_for_command(const wcstring &cmd_orig, const wcs
+		                     if (short_opt_pos + 1 != str.size()) continue;
+		                     // .. and it does not require one ..
+		-                    if (*last_option_requires_param) continue;
+		+                    if (last_option_requires_param == requires_param::no) continue;
+		                     // .. and the option is not already there.
+		                     if (str.find(optchar) != wcstring::npos) continue;
+		```
