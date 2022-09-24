@@ -1,0 +1,9 @@
+None:None: 𑁍 81875855
+ 85b9f3c71 Fix actual issue with allow_use_posix_spawn.
+ ? no file 'None' in 85b9f3c71f703429e44290b76e6d9e87b58d31ce~..85b9f3c71f703429e44290b76e6d9e87b58d31ce
+	[faho] Missed one on line 357.
+
+		I would argue that the check should just be put back into handle_fish_use_posix_spawn_change, which allows you to check it once instead of in two places.
+	[floam] The idea I suppose was now `handle_fish_use_posix_spawn_change` doesn't even need to be compiled in let alone triggered. Feel free to change it up however.
+
+𑁍
