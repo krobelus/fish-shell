@@ -1,0 +1,4 @@
+	[page-down] @floam
+		I believe that in this refactoring `help.fish` is missing a space before `\)` and executing `help` will see an error message. Would you mind fixing this typo? Thanks.
+	[faho] Included in #9119 - https://github.com/fish-shell/fish-shell/pull/9119/commits/97cc936e47239b5ec586f8f2fdd9b0ef73beea40
+	[floam] doh.
