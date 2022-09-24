@@ -1,0 +1,5 @@
+	[NextAlone] sorry for the typo, and the desc of these two seems the same in `git fetch --help`
+		```
+		--depth <depth>       deepen history of shallow clone
+		--deepen <n>          deepen history of shallow clone
+		```
