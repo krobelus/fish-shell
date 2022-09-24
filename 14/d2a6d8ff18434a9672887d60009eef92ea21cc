@@ -1,0 +1,20 @@
+src/fallback.cpp:52: 𑁍 81745300
+ 14d2a6d8f IWYU-guided #include rejiggering.
+ #if HAVE_MKOSTEMP
+     // null check because mkostemp may be a weak symbol
+     if (&mkostemp != nullptr) {
+         return mkostemp(name_template, O_CLOEXEC);
+     }
+	[floam] (NULL was the only thing it wanted to pull stddef.h in for.)
+
+None:None: 𑁍 81782814
+ 14d2a6d8f IWYU-guided #include rejiggering.
+ ? no file 'None' in 14d2a6d8ff18434a9672887d60009eef92ea21cc~..14d2a6d8ff18434a9672887d60009eef92ea21cc
+	[ridiculousfish] FYI you can test on musl via our alpine Docker image:
+
+		    ./docker/docker_run_tests.sh  ./docker/alpine.Dockerfile
+
+		I ran it and it builds fine.
+	[floam] Also, two things that are no longer included anywhere at all: `<tuple>` and `<stack>`. Didn't actually check to see if there are others I didn't notice.
+
+𑁍
