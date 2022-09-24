@@ -1,0 +1,21 @@
+	[siteshwar] You may consider putting `xdg-open` at the end of next line, after `chromium-browser`.
+	[faho] ... if I may ask, why?
+
+		The next line is already longer than this one, and we don't enforce length limits anyway.
+
+		Do you have any *reason* why you'd put it there?
+	[siteshwar] I am not sure about the ordering of browsers here. `xdg-open` is something very generic and it's something that I may try first or last. It's a very generic case. Although result may be same for most the time, keeping it at the end will avoid any surprises for existing users. For e.g. "Why does it open chrome instead of opera now?"
+	[faho] We *already* prefer xdg-open. (and we should, because that opens the user's preferred browser)
+
+		The logic below is a bit weird, but in essence there's no `break` out of the `if`, so we try:
+
+		- text browsers
+		- graphical browsers
+		- macos open
+		- cygstart
+		- xdg-open
+		- cmd.exe
+		- wsl-open
+
+		And keep the *last*.
+	[siteshwar] Ok, the code is somewhat trickier than I expected. I believe browser should be executed as soon as you find one, instead of still trying to find the "best" one. In any case, I don't want to spend too much time dwelling on it. Thank you for your explanation.
