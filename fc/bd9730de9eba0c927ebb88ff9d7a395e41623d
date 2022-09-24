@@ -1,0 +1,9 @@
+None:None: 𑁍 81123841
+ fcbd9730d completions/git: Shorten alias descriptions
+ ? no file 'None' in fcbd9730de9eba0c927ebb88ff9d7a395e41623d~..fcbd9730de9eba0c927ebb88ff9d7a395e41623d
+	[floam] > because I can't be bothered to check for unicode support
+
+		We actually stick a raw ellipsis char into the output elsewhere in this completion.
+	[floam] ce55114e38b044e483c7f50a29198362c0bff469
+
+𑁍
