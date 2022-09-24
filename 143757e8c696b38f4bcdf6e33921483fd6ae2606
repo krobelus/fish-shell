@@ -1,0 +1,13 @@
+	[mqudsi] > This only kicks in if the wildcard is in the "path component
+		   containing the cursor."
+
+		I was concerned by this because it implied existing behavior would break, but it turns out that everything is great and that the above precondition should read "and there are no completions available"
+
+		e.g.
+
+		```
+		$ touch hello1.txt hello2.txt hello1.log hello2.log
+		$ mv hello*.<TAB>
+		```
+
+		This does *not* expand the wildcard and instead continues to give the desired result (suggesting suffixes that match the pattern, in this case, `hello*.log` and `hello*.txt`).
