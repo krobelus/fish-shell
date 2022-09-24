@@ -1,0 +1,4 @@
+	[faho] 20msec is an understatement - on my system I get 570ms vs 680ms (vs 740ms with 3.3.1). Or over 15%.
+
+		Sweet!
+	[floam] 209ms -> 178ms here, neato.
