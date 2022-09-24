@@ -1,0 +1,64 @@
+None:None: 𑁍 84829844
+ b88b25772 Stringify apt completions again
+ ? no file 'None' in b88b2577267c6837886c93c6c8237528fb415ad6~..b88b2577267c6837886c93c6c8237528fb415ad6
+	[mqudsi] The problem with `string` isn't that it was slow; it's that it was buffering everything so a `head -n ..` after `string` wouldn't speed anything up. Moving the limit ahead of the `string` invocation should be a fine workaround.
+
+		I think apt runtimes depend on the fragmentation of the records. Optimizing it for your machine where `apt-cache` is fast doesn't help for cases like mine where it's not:
+
+		```
+		> time apt-cache --no-generate show ac'.*' >/dev/null
+
+		________________________________________________________
+		Executed in   36.62 secs    fish           external
+		   usr time    1.81 secs    0.00 millis    1.81 secs
+		   sys time   34.80 secs  140.62 millis   34.66 secs
+
+		> time apt-cache --no-generate show '.*'ac'.*' >/dev/null
+
+		________________________________________________________
+		Executed in   37.13 secs    fish           external
+		   usr time    1.45 secs    0.00 millis    1.45 secs
+		   sys time   35.67 secs  156.25 millis   35.52 secs
+		```
+
+		The 2500 limit after `sed` instead of after `apt-cache`:
+
+		```
+		> time apt-cache --no-generate show '.*'ac'.*' 2>/dev/null | sed -r '/^(Package|Description-?[a-zA-Z_]*):/!d;s/Package: (.*)/\1\t/g;s/Description-?[^:]*: (.*)/\1\x1a\n/g' | head -n 2500 >/dev/null
+
+		________________________________________________________
+		Executed in    6.10 secs    fish           external
+		   usr time    0.52 secs    0.00 millis    0.52 secs
+		   sys time    5.98 secs  437.50 millis    5.55 secs
+		```
+
+		vs the way I had it (though like you said, it did result in some potential completions not being suggested):
+
+		```
+		> time apt-cache --no-generate show '.*'ac'.*' 2>/dev/null | head -n2500 >/dev/null
+		________________________________________________________
+		Executed in  873.07 millis    fish           external
+		   usr time  187.50 millis    0.00 millis  187.50 millis
+		   sys time  828.12 millis  296.88 millis  531.25 millis
+		```
+
+		6 seconds is still too long to be usable. I would reduce the 2500 limit since that was based off of multiline descriptions.
+	[faho] >I think apt runtimes depend on the fragmentation of the records. Optimizing it for your machine where apt-cache is fast doesn't help for cases like mine where it's not:
+
+		I sympathize with your problems, but please do recognize that your system here is in bad shape, and what we do there is very different from what we might do on systems where things work better.
+
+		And in particular, it's possible that you can fix it on your end: Have you tried running `apt-cache gencaches` to get apt to regenerate the cache?
+
+		>6 seconds is still too long to be usable. I would reduce the 2500 limit since that was based off of multiline descriptions.
+
+		Sure, I just used the limit you used. For me this would work fine with 10k.
+
+		Note that the [apt completions limit it to 250](https://github.com/fish-shell/fish-shell/blob/17426d4741d8890ced98e7f6a1c046e5cbdc8b3d/share/completions/apt.fish#L30) and match the current token again - which I think should be useless anyway.
+
+		Since that 250 figure is about *entries*, and we still have separate name/description lines here, that comes out to 500, I think?
+	[mqudsi] A limit of 500 brings down the execution time to 2.06 seconds for me: a 66% improvement over the 2500 limit, which is not a bad reduction. Using that plus the special short strings handling I had before reduces it by a further 3-4%, which is probably not worthwhile.
+		I agree that if we are limiting completions here there's no longer any point to limiting them in the apt completions wrapper.
+
+		I'm eager to try to fix the problem on my end now that I know it's not "supposed" to be like this (thanks for the suggested fix), but now I'd actually like to hold off until we find a happy medium for the completions because my case isn't particularly *non*-representative of an Ubuntu installation. It's an LTS version that I had no pressing need to upgrade or replace and I don't mess with `apt` so this is just the result of it doing its own thing organically over the years, meaning I'm sure I'm not the only one in such a situation.
+
+𑁍
