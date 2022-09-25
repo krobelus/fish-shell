@@ -57,3 +57,6 @@
 		                     // .. and the option is not already there.
 		                     if (str.find(optchar) != wcstring::npos) continue;
 		```
+	[mqudsi] I did mean to dereference it before anding, thanks.
+
+		`last_option_requires_param && o.result_mode.requires_param;` prevents it going from false to true (because once it's false, that expression will always evaluate to false).
