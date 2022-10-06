@@ -1,0 +1,2 @@
+	[Darkshadow2] This is causing a compile error on OpenBSD (7.1) - `DT_WHT` isn't defined. Doing an if guard (like with `S_IFWHT` below) works.
+	[faho] cdf1a94e29da9563ebdd067b65746c628bd87443
