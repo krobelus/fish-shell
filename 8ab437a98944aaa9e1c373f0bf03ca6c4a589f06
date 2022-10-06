@@ -1,0 +1,21 @@
+	[mqudsi] I think I saw this before. All you have to do (for some reason) is drop the `= none()` from the declaration.
+
+		Edit: I don't get a warning after locally reverting this patch under GCC 11.1? Though this same compiler has previously complained about `maybe_t` being uninitialized (necessitating 429534496a3e4318220463a05ab57abed33bca7d, which is what I was referencing before).
+	[faho] >All you have to do (for some reason) is drop the = none() from the declaration.
+
+		Nope, doesn't work. Neither without initialization nor with `{}`.
+
+		>I don't get a warning after locally reverting this patch under GCC 11.1?
+
+		I'm using gcc 12.2, it only started happening a while ago. It's entirely possible it got "smarter".
+	[mqudsi] Oh, I’ll try to spin up a vm with that version. It’s weird that GCC isn’t complaining about maybe_t anywhere else - I also feel like the right fix is in the maybe_t code and not at the usage sites.
+	[mqudsi] @faho this patch actually introduces a warning under llvm :(
+
+		```
+		../src/highlight.cpp:773:32: warning: unknown warning group '-Wmaybe-uninitialized', ignored [-Wunknown-warning-option]
+		#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+		                               ^
+		1 warning generated.
+		```
+	[faho] Blergh.... it even *says* "GCC".
+	[faho] Okay, turns out we don't actually need the maybe_t here because we already have a perfectly good state - if we have an open quote our mode can't be "e_unquoted" - e7a7a58030d7eaee94941f2c557e7c06d103c53c.
