@@ -1,0 +1,5 @@
+	[faho] `--kall` does not appear to be a git option?
+
+		`__fish_git` has the stderr silenced, but `__fish_git_recent_commits --kall` exits with status 128 without printing anything.
+	[faho] Okay, broken in bef706b8f181fce99c340d0eb179b6fa707f0a00 because it contains `-a`. Fixed in c84e2eeac1a898ea20bee05a1e3a0a1a792f6fe0
+	[mqudsi] Thanks. I knew that would happen and looked over the output three times with three different tools (git diff, git difftastic, and icdiff) but it still slipped through!
