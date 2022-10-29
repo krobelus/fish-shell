@@ -1,0 +1,15 @@
+	[floam] The script in the commit message isn't right; this works:
+
+		```fish
+		function unused -a file search -d 'find unused functions'
+		  set -f cmds (string replace -fr '^[\s]*function ([\w_]+).*' '$1' < $file)
+		  for fn in $cmds
+		    set -f match (grep -r --include "*.fish" $fn $search < $file | count)
+		    printf "%d %s\n" $match $fn
+		  end | string match -a '1 *'
+		end
+
+		for file in share/*/*.fish
+		  unused $file share && printf "in %s\n\n" $file
+		end
+		```
