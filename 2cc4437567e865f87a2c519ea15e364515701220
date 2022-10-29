@@ -1,0 +1,2 @@
+	[88229769] The SHA guarantees us that the dependency didn't change. Of course it's unlikely to be a problem but I think we should follow best practices for security & reproducibility here. (Or just move to Rust which does it by default - I already got https://github.com/ridiculousfish/fish-shell/tree/oh-no-riir working)
+	[mqudsi] That's a fair point. I should revert this.
