@@ -1,0 +1,1 @@
+	[ridiculousfish] Note that shrinking sizes of things is useful if the flags are stored, but these flags are never stored anywhere: they're always a parameter, and will just occupy a register, so there's no size savings realized from this. That said it's harmless so I don't mind.
