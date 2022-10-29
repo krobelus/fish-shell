@@ -1,0 +1,8 @@
+	[floam] Unfortunately GIT_SHALLOW doesn't work quite right: [[ExternalProject] GIT_SHALLOW is not shallow enough](https://gitlab.kitware.com/cmake/cmake/-/issues/17770)
+
+		Since we aren't even trying to track `master`, why not just fetch the archive? That should be quick.
+
+		```cmake
+		URL	https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.40/pcre2-10.40.tar.bz2
+		URL_MD5	d41d8cd98f00b204e9800998ecf8427e
+		```
