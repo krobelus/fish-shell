@@ -1,0 +1,6 @@
+	[zanchey] Unfortunately, this doesn't work in GCC 4.8 - https://stackoverflow.com/questions/25123458/is-trivially-copyable-is-not-a-member-of-std - so the build is currently broken on older systems (RHEL/CentOS 7 and openSUSE Leap 42.3).
+	[faho] a4aaa4f59ba0c6da284d93c2fca7164565a0e63a appears to fix the build on launchpad at least.
+
+		Is that enough for RHEL as well?
+	[zanchey] No, the traits aren't supported until GCC 5.
+	[88041009] sorry I forgot to test with the dockerfile; 0305c842e6056f926569e167afbef49f05c9c438 seems to fix CentOS and hopefully openSUSE as well
