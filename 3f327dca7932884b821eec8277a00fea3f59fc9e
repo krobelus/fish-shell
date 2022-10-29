@@ -1,0 +1,8 @@
+	[faho] Note: Our "Committing" document [says](https://github.com/fish-shell/fish-shell/wiki/Committing#merges):
+
+		>The merge guidance is:
+
+		>Do a rebase for most branches or pull requests, if they are simple - contain only a few commits and touches only a few files.
+
+		In this case you've turned a single commit into a single commit *plus* a merge commit. This would definitely have been nicer as a rebase, as would #9273.
+	[mqudsi] That was a goof up via the GitHub gui, I intended this to be a fast forward.
