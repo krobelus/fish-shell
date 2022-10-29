@@ -1,0 +1,7 @@
+	[faho] Please look at 789b2010f5b0894893bb606f2a1034c67369d5ad again.
+
+		This is an unsafe use of function variables. Now things can break if there is a global variable of that name.
+
+		I'm also annoyed at the pointless style changes from `; and` to `&&`. That's just churn, please don't do that.
+
+		I believe the scoping issues warrant a revert.
