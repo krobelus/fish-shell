@@ -1,0 +1,4 @@
+	[88284852] not sure what you mean exactly, the revert looks fine to me (the "Template magic" comment is legit - it was there before my changes)
+
+		the commit is not too important per se (it just fixes a warning) but I'm very interested to learn what the problem is. The change felt correct but it's easy to mess up.
+	[mqudsi] Yeah, I thought that comment was part of your commit then realized it wasn't and deleted my comment, but apparently not before you saw it.
