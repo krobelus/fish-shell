@@ -1,0 +1,1 @@
+	[floam] without this,  `set --show` without a variable name given, it was really hard to tell which "Variable [was] read-only".
