@@ -1,0 +1,1 @@
+	[floam] ksh93 has -- long options alternative to -o, and stuff like `--man` for ksh itself and its builtins to output a manpage kind of like fish does, `--version`, and others.
