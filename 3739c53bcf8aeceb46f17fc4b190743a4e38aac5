@@ -1,0 +1,11 @@
+	[faho] Please read #9229 again.
+	[floam] What the heck, I thought it shouldn't write() until the push_back(). What gives? I'll revert if you're sure.
+	[faho] I have already reverted.
+
+		It does write for either `append` or `push_back`, because it is entirely unbuffered.
+	[floam] Apparently we chose to disable line-buffering on stdout because someone thought that was better than `fflush()`ing when you're done with stuff.
+	[floam] I think this was probably a mistake in retrospect: https://github.com/fish-shell/fish-shell/commit/616d301083b925632cd39ff719caad0d973c29a5
+	[floam] The day that commit hit, the number of writes()'s must have went through the roof.
+	[faho] And we've worked on reducing it, and we've done it by writing output however it makes sense for each builtin, and it doesn't appear to have been too much of a practical issue.
+
+		If you want to see how things work with buffered io, try that, report back and if it's great, open a PR. Do check if we're still mixing narrow and wide io in a way that unbuffering io worked around, and how interactivity works out.
