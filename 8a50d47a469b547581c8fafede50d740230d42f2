@@ -1,0 +1,32 @@
+	[faho] This doesn't seem right? The print_hints is defaulted to true, and we have calls to builtin_missing_argument without a print_hints argument.
+	[faho] This calls builtin_missing_argument without providing a print_hints, so the default should be used which is true.
+	[faho] Yup - running `bind -M` results in
+
+		> bind: -M: option requires an argument
+
+		with this, and
+
+		>bind: -M: option requires an argument
+		>
+		>(Type 'help bind' for related documentation)
+
+		without.
+	[faho] Worse, running `fish bind.fish` with `bind -M` in it:
+
+		```output
+		bind: -M: option requires an argument
+
+		bind.fish (line 1):
+		bind -M
+		^
+
+		(Type 'help bind' for related documentation)
+		```
+
+		without, and just
+
+		```output
+		bind: -M: option requires an argument
+		```
+
+		with this. This should be reverted.
