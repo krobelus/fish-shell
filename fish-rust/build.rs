@@ -19,11 +19,13 @@ fn main() -> miette::Result<()> {
     // This allows "Rust to be used from C++"
     // This must come before autocxx so that cxx can emit its cxx.h header.
     let source_files = vec![
+        "src/ast.rs",
         "src/fd_readable_set.rs",
         "src/ffi_init.rs",
         "src/ffi_tests.rs",
         "src/future_feature_flags.rs",
         "src/parse_constants.rs",
+        "src/parse_tree.rs",
         "src/redirection.rs",
         "src/smoke.rs",
         "src/timer.rs",

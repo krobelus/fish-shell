@@ -70,19 +70,19 @@ static wcstring profiling_cmd_name_for_redirectable_block(const ast::node_t &nod
             const node_t *block_header = node.as<block_statement_t>()->header.get();
             switch (block_header->type) {
                 case type_t::for_header:
-                    src_end = block_header->as<for_header_t>()->semi_nl.source_range().start;
+                    src_end = block_header->as_for_header()->semi_nl.source_range().start;
                     break;
 
                 case type_t::while_header:
-                    src_end = block_header->as<while_header_t>()->condition.source_range().end();
+                    src_end = block_header->as_while_header()->condition.source_range().end();
                     break;
 
                 case type_t::function_header:
-                    src_end = block_header->as<function_header_t>()->semi_nl.source_range().start;
+                    src_end = block_header->as_function_header()->semi_nl.source_range().start;
                     break;
 
                 case type_t::begin_header:
-                    src_end = block_header->as<begin_header_t>()->kw_begin.source_range().end();
+                    src_end = block_header->as_begin_header()->kw_begin.source_range().end();
                     break;
 
                 default:
@@ -139,13 +139,13 @@ parse_execution_context_t::infinite_recursive_statement_in_job_list(const ast::j
     // on function invocation changes, then this check will break.
     const block_t *current = parser->block_at_index(0), *parent = parser->block_at_index(1);
     bool is_within_function_call =
-        (current && parent && current->type() == block_type_t::top && parent->is_function_call());
+        (current && parent && current->type() == block_type_t::top && parent()->is_function_call());
     if (!is_within_function_call) {
         return nullptr;
     }
 
     // Get the function name of the immediate block.
-    const wcstring &forbidden_function_name = parent->function_name;
+    const wcstring &forbidden_function_name = parent()->function_name;
 
     // Get the first job in the job list.
     const ast::job_conjunction_t *jc = jobs.at(0);
@@ -156,8 +156,7 @@ parse_execution_context_t::infinite_recursive_statement_in_job_list(const ast::j
     auto statement_recurses =
         [&](const ast::statement_t &stat) -> const ast::decorated_statement_t * {
         // Ignore non-decorated statements like `if`, etc.
-        const ast::decorated_statement_t *dc =
-            stat.contents.contents->try_as<ast::decorated_statement_t>();
+        const ast::decorated_statement_t *dc = stat.contents.contents->try_as_decorated_statement();
         if (!dc) return nullptr;
 
         // Ignore statements with decorations like 'builtin' or 'command', since those
@@ -409,13 +408,13 @@ end_execution_reason_t parse_execution_context_t::run_block_statement(
     const ast::node_t &bh = *statement.header.contents;
     const ast::job_list_t &contents = statement.jobs;
     end_execution_reason_t ret = end_execution_reason_t::ok;
-    if (const auto *fh = bh.try_as<ast::for_header_t>()) {
+    if (const auto *fh = bh.try_as_for_header()) {
         ret = run_for_statement(*fh, contents);
-    } else if (const auto *wh = bh.try_as<ast::while_header_t>()) {
+    } else if (const auto *wh = bh.try_as_while_header()) {
         ret = run_while_statement(*wh, contents, associated_block);
-    } else if (const auto *fh = bh.try_as<ast::function_header_t>()) {
+    } else if (const auto *fh = bh.try_as_function_header()) {
         ret = run_function_statement(statement, *fh);
-    } else if (bh.try_as<ast::begin_header_t>()) {
+    } else if (bh.try_as_begin_header()) {
         ret = run_begin_statement(contents);
     } else {
         FLOGF(error, L"Unexpected block header: %ls\n", bh.describe().c_str());
@@ -1256,10 +1255,10 @@ static bool job_node_wants_timing(const ast::job_pipeline_t &job_node) {
 
     // Helper to return true if a node is 'not time ...' or 'not not time...' or...
     auto is_timed_not_statement = [](const ast::statement_t &stat) {
-        const auto *ns = stat.contents->try_as<ast::not_statement_t>();
+        const auto *ns = stat.contents->try_as_not_statement();
         while (ns) {
             if (ns->time) return true;
-            ns = ns->contents.try_as<ast::not_statement_t>();
+            ns = ns->contents.try_as_not_statement();
         }
         return false;
     };
@@ -1320,18 +1319,17 @@ end_execution_reason_t parse_execution_context_t::run_1_job(const ast::job_pipel
         if (result == end_execution_reason_t::ok) {
             switch (specific_statement->type) {
                 case ast::type_t::block_statement: {
-                    result = this->run_block_statement(
-                        *specific_statement->as<ast::block_statement_t>(), associated_block);
+                    result = this->run_block_statement(*specific_statement->as_block_statement(),
+                                                       associated_block);
                     break;
                 }
                 case ast::type_t::if_statement: {
-                    result = this->run_if_statement(*specific_statement->as<ast::if_statement_t>(),
+                    result = this->run_if_statement(*specific_statement->as_if_statement(),
                                                     associated_block);
                     break;
                 }
                 case ast::type_t::switch_statement: {
-                    result = this->run_switch_statement(
-                        *specific_statement->as<ast::switch_statement_t>());
+                    result = this->run_switch_statement(*specific_statement->as_switch_statement());
                     break;
                 }
                 default: {
@@ -1510,11 +1508,11 @@ end_execution_reason_t parse_execution_context_t::eval_node(const ast::statement
     // Note we only expect block-style statements here. No not statements.
     enum end_execution_reason_t status = end_execution_reason_t::ok;
     const ast::node_t *contents = statement.contents.get();
-    if (const auto *block = contents->try_as<ast::block_statement_t>()) {
+    if (const auto *block = contents->try_as_block_statement()) {
         status = this->run_block_statement(*block, associated_block);
-    } else if (const auto *ifstat = contents->try_as<ast::if_statement_t>()) {
+    } else if (const auto *ifstat = contents->try_as_if_statement()) {
         status = this->run_if_statement(*ifstat, associated_block);
-    } else if (const auto *switchstat = contents->try_as<ast::switch_statement_t>()) {
+    } else if (const auto *switchstat = contents->try_as_switch_statement()) {
         status = this->run_switch_statement(*switchstat);
     } else {
         FLOGF(error, L"Unexpected node %ls found in %s", statement.describe().c_str(),

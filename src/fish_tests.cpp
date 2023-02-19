@@ -1061,12 +1061,11 @@ static void test_debounce_timeout() {
 
 static parser_test_error_bits_t detect_argument_errors(const wcstring &src) {
     using namespace ast;
-    auto ast = ast_t::parse_argument_list(src, parse_flag_none);
+    auto ast = ast_parse_argument_list(src, parse_flag_none);
     if (ast.errored()) {
         return PARSER_TEST_ERROR;
     }
-    const ast::argument_t *first_arg =
-        ast.top()->as<freestanding_argument_list_t>()->arguments.at(0);
+    const ast::argument_t *first_arg = ast.top()->as_freestanding_argument_list()->arguments.at(0);
     if (!first_arg) {
         err(L"Failed to parse an argument");
         return 0;
@@ -3220,7 +3219,7 @@ static std::shared_ptr<function_properties_t> make_test_func_props() {
     ret->parsed_source = parse_source(L"function stuff; end", parse_flag_none, nullptr);
     assert(ret->parsed_source && "Failed to parse");
     for (const auto &node : ret->parsed_source->ast) {
-        if (const auto *s = node.try_as<ast::block_statement_t>()) {
+        if (const auto *s = node.try_as_block_statement()) {
             ret->func_node = s;
             break;
         }
@@ -4944,7 +4943,7 @@ static void test_new_parser_correctness() {
     };
 
     for (const auto &test : parser_tests) {
-        auto ast = ast::ast_t::parse(test.src);
+        auto ast = ast_parse(test.src);
         bool success = !ast.errored();
         if (success && !test.ok) {
             err(L"\"%ls\" should NOT have parsed, but did", test.src);
@@ -4998,7 +4997,7 @@ static void test_new_parser_fuzzing() {
         unsigned long permutation = 0;
         while (string_for_permutation(fuzzes, sizeof fuzzes / sizeof *fuzzes, len, permutation++,
                                       &src)) {
-            ast::ast_t::parse(src);
+            ast_parse(src);
         }
         if (log_it) std::fwprintf(stderr, L"done (%lu)\n", permutation);
     }
@@ -5015,13 +5014,13 @@ static bool test_1_parse_ll2(const wcstring &src, wcstring *out_cmd, wcstring *o
     out_joined_args->clear();
     *out_deco = statement_decoration_t::none;
 
-    auto ast = ast_t::parse(src);
+    auto ast = ast_parse(src);
     if (ast.errored()) return false;
 
     // Get the statement. Should only have one.
     const decorated_statement_t *statement = nullptr;
     for (const auto &n : ast) {
-        if (const auto *tmp = n.try_as<decorated_statement_t>()) {
+        if (const auto *tmp = n.try_as_decorated_statement()) {
             if (statement) {
                 say(L"More than one decorated statement found in '%ls'", src.c_str());
                 return false;
@@ -5055,7 +5054,7 @@ static bool test_1_parse_ll2(const wcstring &src, wcstring *out_cmd, wcstring *o
 template <ast::type_t Type>
 static void check_function_help(const wchar_t *src) {
     using namespace ast;
-    auto ast = ast_t::parse(src);
+    auto ast = ast_parse(src);
     if (ast.errored()) {
         err(L"Failed to parse '%ls'", src);
     }
@@ -5126,7 +5125,7 @@ static void test_new_parser_ad_hoc() {
 
     // Ensure that 'case' terminates a job list.
     const wcstring src = L"switch foo ; case bar; case baz; end";
-    auto ast = ast_t::parse(src);
+    auto ast = ast_parse(src);
     if (ast.errored()) {
         err(L"Parsing failed");
     }
@@ -5146,27 +5145,27 @@ static void test_new_parser_ad_hoc() {
     // leading to an infinite loop.
 
     // By itself it should produce an error.
-    ast = ast_t::parse(L"a=");
+    ast = ast_parse(L"a=");
     do_test(ast.errored());
 
     // If we are leaving things unterminated, this should not produce an error.
     // i.e. when typing "a=" at the command line, it should be treated as valid
     // because we don't want to color it as an error.
-    ast = ast_t::parse(L"a=", parse_flag_leave_unterminated);
+    ast = ast_parse(L"a=", parse_flag_leave_unterminated);
     do_test(!ast.errored());
 
     auto errors = new_parse_error_list();
-    ast = ast_t::parse(L"begin; echo (", parse_flag_leave_unterminated, &*errors);
+    ast = ast_parse(L"begin; echo (", parse_flag_leave_unterminated, &*errors);
     do_test(errors->size() == 1 &&
             errors->at(0)->code() == parse_error_code_t::tokenizer_unterminated_subshell);
 
     errors->clear();
-    ast = ast_t::parse(L"for x in (", parse_flag_leave_unterminated, &*errors);
+    ast = ast_parse(L"for x in (", parse_flag_leave_unterminated, &*errors);
     do_test(errors->size() == 1 &&
             errors->at(0)->code() == parse_error_code_t::tokenizer_unterminated_subshell);
 
     errors->clear();
-    ast = ast_t::parse(L"begin; echo '", parse_flag_leave_unterminated, &*errors);
+    ast = ast_parse(L"begin; echo '", parse_flag_leave_unterminated, &*errors);
     do_test(errors->size() == 1 &&
             errors->at(0)->code() == parse_error_code_t::tokenizer_unterminated_quote);
 }
@@ -5200,7 +5199,7 @@ static void test_new_parser_errors() {
         parse_error_code_t expected_code = test.code;
 
         auto errors = new_parse_error_list();
-        auto ast = ast::ast_t::parse(src, parse_flag_none, &*errors);
+        auto ast = ast_parse(src, parse_flag_none, &*errors);
         if (!ast.errored()) {
             err(L"Source '%ls' was expected to fail to parse, but succeeded", src.c_str());
         }

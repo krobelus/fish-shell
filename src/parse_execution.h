@@ -135,7 +135,8 @@ class parse_execution_context_t : noncopyable_t {
     end_execution_reason_t determine_redirections(const ast::argument_or_redirection_list_t &list,
                                                   redirection_spec_list_t *out_redirections);
 
-    end_execution_reason_t run_1_job(const ast::job_pipeline_t &job, const block_t *associated_block);
+    end_execution_reason_t run_1_job(const ast::job_pipeline_t &job,
+                                     const block_t *associated_block);
     end_execution_reason_t test_and_run_1_job_conjunction(const ast::job_conjunction_t &jc,
                                                           const block_t *associated_block);
     end_execution_reason_t run_job_conjunction(const ast::job_conjunction_t &job_expr,
@@ -174,7 +175,7 @@ class parse_execution_context_t : noncopyable_t {
     const wcstring &get_source() const { return pstree->src; }
 
     /// Return the parsed ast.
-    const ast::ast_t &ast() const { return pstree->ast; }
+    const ast::ast_t &ast() const { return *pstree->ast; }
 
     /// Start executing at the given node. Returns 0 if there was no error, 1 if there was an
     /// error.

@@ -13,8 +13,73 @@
 #include <vector>
 
 #include "common.h"
+#include "cxx.h"
 #include "maybe.h"
 #include "parse_constants.h"
+
+#if INCLUDE_RUST_HEADERS
+#include "ast.rs.h"
+namespace ast {
+
+using ast_t = Ast;
+using category_t = Category;
+using type_t = Type;
+using node_t = NodeFFI;
+
+struct keyword_base_t;
+struct token_base_t;
+
+using andor_job_list_t = AndorJobListNode;
+using andor_job_t = AndorJobNode;
+using argument_list_t = ArgumentListNode;
+using argument_or_redirection_list_t = ArgumentOrRedirectionListNode;
+using argument_or_redirection_t = ArgumentOrRedirectionNode;
+using argument_t = ArgumentNode;
+using begin_header_t = BeginHeaderNode;
+using block_statement_t = BlockStatementNode;
+using case_item_t = CaseItemNode;
+using decorated_statement_t = DecoratedStatementNode;
+using for_header_t = ForHeaderNode;
+using freestanding_argument_list_t = FreestandingArgumentListNode;
+using function_header_t = FunctionHeaderNode;
+using if_statement_t = IfStatementNode;
+using job_conjunction_continuation_t = JobConjunctionContinuationNode;
+using job_conjunction_t = JobConjunctionNode;
+using job_continuation_t = JobContinuationNode;
+using job_list_t = JobListNode;
+using job_pipeline_t = JobPipelineNode;
+using not_statement_t = NotStatementNode;
+using redirection_t = RedirectionNode;
+using semi_nl_t = SemiNlNode;
+using statement_t = StatementNode;
+using string_t = StringNode;
+using switch_statement_t = SwitchStatementNode;
+using variable_assignment_list_t = VariableAssignmentListNode;
+using variable_assignment_t = VariableAssignmentNode;
+using while_header_t = WhileHeaderNode;
+
+}  // namespace ast
+
+#else
+// TODO remove
+struct Ast;
+namespace ast {
+using ast_t = Ast;
+
+struct argument_t;
+struct block_statement_t;
+struct statement_t;
+
+}  // namespace ast
+#endif
+
+rust::Box<Ast> ast_parse(const wcstring &src, parse_tree_flags_t flags = parse_flag_none,
+                         parse_error_list_t *out_errors = nullptr);
+rust::Box<Ast> ast_parse_argument_list(const wcstring &src,
+                                       parse_tree_flags_t flags = parse_flag_none,
+                                       parse_error_list_t *out_errors = nullptr);
+
+#if 0
 
 namespace ast {
 /**
@@ -232,7 +297,7 @@ struct node_t : noncopyable_t {
 
     /// Cast to a concrete node type, aborting on failure.
     /// Example usage:
-    ///   if (node->type == type_t::job_list) node->as<job_list_t>()->...
+    ///   if (node->type == type_t::job_list) node->as_job_list()->...
     template <typename To>
     To *as() {
         assert(this->type == To::AstType && "Invalid type conversion");
@@ -474,13 +539,13 @@ struct argument_or_redirection_t final : public branch_t<type_t::argument_or_red
     /// \return this as an argument, assuming it wraps one.
     const argument_t &argument() const {
         assert(is_argument() && "Is not an argument");
-        return *this->contents.contents->as<argument_t>();
+        return *this->contents.contents->as_argument();
     }
 
     /// \return this as an argument, assuming it wraps one.
     const redirection_t &redirection() const {
         assert(is_redirection() && "Is not a redirection");
-        return *this->contents.contents->as<redirection_t>();
+        return *this->contents.contents->as_redirection();
     }
 
     FIELDS(contents);
@@ -1040,4 +1105,7 @@ class ast_t : noncopyable_t {
 };
 
 }  // namespace ast
+
+#endif
+
 #endif  // FISH_AST_H

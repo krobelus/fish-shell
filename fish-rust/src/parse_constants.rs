@@ -5,15 +5,17 @@ use crate::tokenizer::variable_assignment_equals_pos;
 use crate::wchar::{wstr, WString, L};
 use crate::wchar_ffi::{wcharz, WCharFromFFI, WCharToFFI};
 use crate::wutil::{sprintf, wgettext_fmt};
+use cxx::{type_id, ExternType};
 use cxx::{CxxWString, UniquePtr};
 use std::ops::{BitAnd, BitOrAssign};
 use widestring_suffix::widestrs;
 
-type SourceOffset = u32;
+pub type SourceOffset = u32;
 
 pub const SOURCE_OFFSET_INVALID: SourceOffset = SourceOffset::MAX;
 pub const SOURCE_LOCATION_UNKNOWN: usize = usize::MAX;
 
+#[derive(Copy, Clone)]
 pub struct ParseTreeFlags(u8);
 
 pub const PARSE_FLAG_NONE: ParseTreeFlags = ParseTreeFlags(0);
@@ -44,7 +46,7 @@ impl BitOrAssign for ParseTreeFlags {
     }
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Copy, Clone)]
 pub struct ParserTestErrorBits(u8);
 
 pub const PARSER_TEST_ERROR: ParserTestErrorBits = ParserTestErrorBits(1);
@@ -63,14 +65,14 @@ impl BitOrAssign for ParserTestErrorBits {
 }
 
 #[cxx::bridge]
-mod parse_constants_ffi {
+pub mod parse_constants_ffi {
     extern "C++" {
         include!("wutil.h");
         type wcharz_t = super::wcharz_t;
     }
 
     /// A range of source code.
-    #[derive(PartialEq, Eq)]
+    #[derive(PartialEq, Eq, Clone, Copy)]
     struct SourceRange {
         start: u32,
         length: u32,
@@ -231,16 +233,19 @@ mod parse_constants_ffi {
 }
 
 pub use parse_constants_ffi::{
-    parse_error_t, ParseErrorCode, ParseKeyword, ParseTokenType, SourceRange,
+    parse_error_t, ParseErrorCode, ParseKeyword, ParseTokenType, SourceRange, StatementDecoration,
 };
 
 impl SourceRange {
-    fn end(&self) -> SourceOffset {
+    pub fn new(start: SourceOffset, length: SourceOffset) -> Self {
+        SourceRange { start, length }
+    }
+    pub fn end(&self) -> SourceOffset {
         self.start.checked_add(self.length).expect("Overflow")
     }
 
     // \return true if a location is in this range, including one-past-the-end.
-    fn contains_inclusive(&self, loc: SourceOffset) -> bool {
+    pub fn contains_inclusive(&self, loc: SourceOffset) -> bool {
         self.start <= loc && loc - self.start <= self.length
     }
 }
@@ -336,14 +341,14 @@ fn keyword_from_string<'a>(s: impl Into<&'a wstr>) -> ParseKeyword {
 }
 
 #[derive(Clone)]
-struct ParseError {
+pub struct ParseError {
     /// Text of the error.
-    text: WString,
+    pub text: WString,
     /// Code for the error.
-    code: ParseErrorCode,
+    pub code: ParseErrorCode,
     /// Offset and length of the token in the source code that triggered this error.
-    source_start: usize,
-    source_length: usize,
+    pub source_start: usize,
+    pub source_length: usize,
 }
 
 impl Default for ParseError {
@@ -589,6 +594,11 @@ fn token_type_user_presentable_description_ffi(
 
 /// TODO This should be type alias once we drop the FFI.
 pub struct ParseErrorList(Vec<ParseError>);
+
+unsafe impl ExternType for ParseErrorList {
+    type Id = type_id!("ParseErrorList");
+    type Kind = cxx::kind::Opaque;
+}
 
 /// Helper function to offset error positions by the given amount. This is used when determining
 /// errors in a substring of a larger source buffer.

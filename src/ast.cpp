@@ -16,6 +16,15 @@
 #include "tokenizer.h"
 #include "wutil.h"  // IWYU pragma: keep
 
+rust::Box<Ast> ast_parse(const wcstring &src, parse_tree_flags_t flags,
+                         parse_error_list_t *out_errors) {
+    return ast_parse_ffi(src, flags, out_errors);
+}
+rust::Box<Ast> ast_parse_argument_list(const wcstring &src, parse_tree_flags_t flags,
+                                       parse_error_list_t *out_errors) {
+    return ast_parse_argument_list_ffi(src, flags, out_errors);
+}
+#if 0
 namespace {
 
 /// \return tokenizer flags corresponding to parse tree flags.
@@ -244,30 +253,30 @@ static std::pair<source_range_t, const wchar_t *> find_block_open_keyword(const 
     while (cursor != nullptr) {
         switch (cursor->type) {
             case type_t::block_statement:
-                cursor = cursor->as<block_statement_t>()->header.contents.get();
+                cursor = cursor->as_block_statement()->header.contents.get();
                 break;
             case type_t::for_header: {
-                const auto *h = cursor->as<for_header_t>();
+                const auto *h = cursor->as_for_header();
                 return {h->kw_for.range, L"for loop"};
             }
             case type_t::while_header: {
-                const auto *h = cursor->as<while_header_t>();
+                const auto *h = cursor->as_while_header();
                 return {h->kw_while.range, L"while loop"};
             }
             case type_t::function_header: {
-                const auto *h = cursor->as<function_header_t>();
+                const auto *h = cursor->as_function_header();
                 return {h->kw_function.range, L"function definition"};
             }
             case type_t::begin_header: {
-                const auto *h = cursor->as<begin_header_t>();
+                const auto *h = cursor->as_begin_header();
                 return {h->kw_begin.range, L"begin"};
             }
             case type_t::if_statement: {
-                const auto *h = cursor->as<if_statement_t>();
+                const auto *h = cursor->as_if_statement();
                 return {h->if_clause.kw_if.range, L"if statement"};
             }
             case type_t::switch_statement: {
-                const auto *h = cursor->as<switch_statement_t>();
+                const auto *h = cursor->as_switch_statement();
                 return {h->kw_switch.range, L"switch statement"};
             }
             default:
@@ -1282,8 +1291,8 @@ static void set_parents(const node_t *top) {
 }
 
 // static
-ast_t ast_t::parse_from_top(const wcstring &src, parse_tree_flags_t parse_flags,
-                            parse_error_list_t *out_errors, type_t top_type) {
+ast_t ast_parse_from_top(const wcstring &src, parse_tree_flags_t parse_flags,
+                         parse_error_list_t *out_errors, type_t top_type) {
     assert((top_type == type_t::job_list || top_type == type_t::freestanding_argument_list) &&
            "Invalid top type");
     ast_t ast;
@@ -1313,13 +1322,13 @@ ast_t ast_t::parse_from_top(const wcstring &src, parse_tree_flags_t parse_flags,
 }
 
 // static
-ast_t ast_t::parse(const wcstring &src, parse_tree_flags_t flags, parse_error_list_t *out_errors) {
+ast_t ast_parse(const wcstring &src, parse_tree_flags_t flags, parse_error_list_t *out_errors) {
     return parse_from_top(src, flags, out_errors, type_t::job_list);
 }
 
 // static
-ast_t ast_t::parse_argument_list(const wcstring &src, parse_tree_flags_t flags,
-                                 parse_error_list_t *out_errors) {
+ast_t ast_parse_argument_list(const wcstring &src, parse_tree_flags_t flags,
+                              parse_error_list_t *out_errors) {
     return parse_from_top(src, flags, out_errors, type_t::freestanding_argument_list);
 }
 
@@ -1391,3 +1400,4 @@ wcstring ast_t::dump(const wcstring &orig) const {
     return result;
 }
 }  // namespace ast
+#endif

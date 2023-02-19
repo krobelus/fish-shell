@@ -635,7 +635,7 @@ static proc_performer_t get_performer_for_process(process_t *p, job_t *job,
         const parsed_source_ref_t &source = p->block_node_source;
         const ast::statement_t *node = p->internal_block_node;
         assert(source && node && "Process is missing node info");
-        return [=](parser_t &parser) {
+        return [=, source = source.clone()](parser_t &parser) {
             return parser.eval_node(source, *node, io_chain, job_group).status;
         };
     } else {
@@ -648,7 +648,7 @@ static proc_performer_t get_performer_for_process(process_t *p, job_t *job,
         const wcstring_list_t &argv = p->argv();
         return [=](parser_t &parser) {
             // Pull out the job list from the function.
-            const ast::job_list_t &body = props->func_node->jobs;
+            const ast::job_list_t &body = props->func_node->jobs();
             const block_t *fb = function_prepare_environment(parser, argv, *props);
             auto res = parser.eval_node(props->parsed_source, body, io_chain, job_group);
             function_restore_environment(parser, fb);

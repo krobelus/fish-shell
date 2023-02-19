@@ -109,7 +109,7 @@ struct pretty_printer_t {
     pretty_printer_t(const wcstring &src, bool do_indent)
         : source(src),
           indents(do_indent ? parse_util_compute_indents(source) : std::vector<int>(src.size(), 0)),
-          ast(ast_t::parse(src, parse_flags())),
+          ast(ast_parse(src, parse_flags())),
           do_indent(do_indent),
           gaps(compute_gaps()),
           preferred_semi_locations(compute_preferred_semi_locations()) {
@@ -195,11 +195,11 @@ struct pretty_printer_t {
                         p = p->parent;
                         assert(p->type == type_t::statement);
                         p = p->parent;
-                        if (auto job = p->try_as<job_pipeline_t>()) {
+                        if (auto job = p->try_as_job_pipeline()) {
                             if (!job->variables.empty()) result |= allow_escaped_newlines;
-                        } else if (auto job_cnt = p->try_as<job_continuation_t>()) {
+                        } else if (auto job_cnt = p->try_as_job_continuation()) {
                             if (!job_cnt->variables.empty()) result |= allow_escaped_newlines;
-                        } else if (auto not_stmt = p->try_as<not_statement_t>()) {
+                        } else if (auto not_stmt = p->try_as_not_statement()) {
                             if (!not_stmt->variables.empty()) result |= allow_escaped_newlines;
                         }
                         break;
@@ -310,10 +310,10 @@ struct pretty_printer_t {
             // See if we have a condition and an andor_job_list.
             const optional_t<semi_nl_t> *condition = nullptr;
             const andor_job_list_t *andors = nullptr;
-            if (const auto *ifc = node.try_as<if_clause_t>()) {
+            if (const auto *ifc = node.try_as_if_clause()) {
                 condition = &ifc->condition.semi_nl;
                 andors = &ifc->andor_tail;
-            } else if (const auto *wc = node.try_as<while_header_t>()) {
+            } else if (const auto *wc = node.try_as_while_header()) {
                 condition = &wc->condition.semi_nl;
                 andors = &wc->andor_tail;
             }
@@ -330,7 +330,7 @@ struct pretty_printer_t {
 
         // `x ; and y` gets semis if it has them already, and they are on the same line.
         for (const auto &node : ast) {
-            if (const auto *job_list = node.try_as<job_list_t>()) {
+            if (const auto *job_list = node.try_as_job_list()) {
                 const semi_nl_t *prev_job_semi_nl = nullptr;
                 for (const job_conjunction_t &job : *job_list) {
                     // Set up prev_job_semi_nl for the next iteration to make control flow easier.
@@ -751,7 +751,7 @@ static std::string make_pygments_csv(const wcstring &src) {
 static wcstring prettify(const wcstring &src, bool do_indent) {
     if (dump_parse_tree) {
         auto ast =
-            ast::ast_t::parse(src, parse_flag_leave_unterminated | parse_flag_include_comments |
+            ast_parse(src, parse_flag_leave_unterminated | parse_flag_include_comments |
                                        parse_flag_show_extra_semis);
         wcstring ast_dump = ast.dump(src);
         std::fwprintf(stderr, L"%ls\n", ast_dump.c_str());

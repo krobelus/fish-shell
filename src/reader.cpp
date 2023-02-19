@@ -1413,12 +1413,12 @@ static std::vector<positioned_token_t> extract_tokens(const wcstring &str) {
     parse_tree_flags_t ast_flags = parse_flag_continue_after_error |
                                    parse_flag_accept_incomplete_tokens |
                                    parse_flag_leave_unterminated;
-    auto ast = ast::ast_t::parse(str, ast_flags);
+    auto ast = ast_parse(str, ast_flags);
 
     // Helper to check if a node is the command portion of an undecorated statement.
     auto is_command = [&](const node_t *node) {
         for (const node_t *cursor = node; cursor; cursor = cursor->parent) {
-            if (const auto *stmt = cursor->try_as<decorated_statement_t>()) {
+            if (const auto *stmt = cursor->try_as_decorated_statement()) {
                 if (!stmt->opt_decoration && node == &stmt->command) {
                     return true;
                 }
@@ -4725,7 +4725,7 @@ static int read_ni(parser_t &parser, int fd, const io_chain_t &io) {
 
     // Parse into an ast and detect errors.
     auto errors = new_parse_error_list();
-    auto ast = ast::ast_t::parse(str, parse_flag_none, &*errors);
+    auto ast = ast_parse(str, parse_flag_none, &*errors);
     bool errored = ast.errored();
     if (!errored) {
         errored = parse_util_detect_errors(ast, str, &*errors);
@@ -4733,8 +4733,8 @@ static int read_ni(parser_t &parser, int fd, const io_chain_t &io) {
     if (!errored) {
         // Construct a parsed source ref.
         // Be careful to transfer ownership, this could be a very large string.
-        parsed_source_ref_t ps = std::make_shared<parsed_source_t>(std::move(str), std::move(ast));
-        parser.eval(ps, io);
+        auto ps = new_parsed_source_ref(str, ast);
+        parser.eval(*ps, io);
         return 0;
     } else {
         wcstring sb;

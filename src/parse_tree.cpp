@@ -56,9 +56,9 @@ parsed_source_t::~parsed_source_t() = default;
 parsed_source_ref_t parse_source(wcstring &&src, parse_tree_flags_t flags,
                                  parse_error_list_t *errors) {
     using namespace ast;
-    ast_t ast = ast_t::parse(src, flags, errors);
-    if (ast.errored() && !(flags & parse_flag_continue_after_error)) {
+    auto ast = ast_parse(src, flags, errors);
+    if (ast->errored() && !(flags & parse_flag_continue_after_error)) {
         return nullptr;
     }
-    return std::make_shared<parsed_source_t>(std::move(src), std::move(ast));
+    return new_parsed_source_ref(src, ast);
 }

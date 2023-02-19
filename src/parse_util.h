@@ -6,14 +6,11 @@
 
 #include <vector>
 
+#include "ast.h"
 #include "common.h"
 #include "maybe.h"
 #include "parse_constants.h"
 
-namespace ast {
-struct argument_t;
-class ast_t;
-}  // namespace ast
 struct Tok;
 using tok_t = Tok;
 

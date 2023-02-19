@@ -165,7 +165,7 @@ pub use tokenizer_ffi::{
 };
 
 #[derive(Clone, Copy)]
-pub struct TokFlags(u8);
+pub struct TokFlags(pub u8);
 
 impl BitAnd for TokFlags {
     type Output = bool;
@@ -177,6 +177,11 @@ impl BitOr for TokFlags {
     type Output = Self;
     fn bitor(self, rhs: Self) -> Self::Output {
         Self(self.0 | rhs.0)
+    }
+}
+impl BitOrAssign for TokFlags {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 |= rhs.0
     }
 }
 

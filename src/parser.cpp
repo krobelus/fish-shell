@@ -39,13 +39,9 @@ static wcstring user_presentable_path(const wcstring &path, const environment_t 
     return replace_home_directory_with_tilde(path, vars);
 }
 
-void library_data_t::set_exit_current_script(bool val) {
-    exit_current_script = val;
-};
+void library_data_t::set_exit_current_script(bool val) { exit_current_script = val; };
 
-void library_data_t::set_returning(bool val) {
-    returning = val;
-};
+void library_data_t::set_returning(bool val) { returning = val; };
 
 parser_t::parser_t(std::shared_ptr<env_stack_t> vars, bool is_principal)
     : variables(std::move(vars)), is_principal_(is_principal) {
@@ -189,7 +185,7 @@ completion_list_t parser_t::expand_argument_list(const wcstring &arg_list_src,
                                                  expand_flags_t eflags,
                                                  const operation_context_t &ctx) {
     // Parse the string as an argument list.
-    auto ast = ast::ast_t::parse_argument_list(arg_list_src);
+    auto ast = ast::ast_parse_argument_list(arg_list_src);
     if (ast.errored()) {
         // Failed to parse. Here we expect to have reported any errors in test_args.
         return {};
@@ -197,8 +193,7 @@ completion_list_t parser_t::expand_argument_list(const wcstring &arg_list_src,
 
     // Get the root argument list and extract arguments from it.
     completion_list_t result;
-    const ast::freestanding_argument_list_t *list =
-        ast.top()->as<ast::freestanding_argument_list_t>();
+    const ast::freestanding_argument_list_t *list = ast.top()->as_freestanding_argument_list();
     for (const ast::argument_t &arg : list->arguments) {
         wcstring arg_src = arg.source(arg_list_src);
         if (expand_string(arg_src, &result, eflags, ctx) == expand_result_t::error) {
@@ -529,7 +524,7 @@ eval_res_t parser_t::eval(const wcstring &cmd, const io_chain_t &io,
 eval_res_t parser_t::eval(const parsed_source_ref_t &ps, const io_chain_t &io,
                           const job_group_ref_t &job_group, enum block_type_t block_type) {
     assert(block_type == block_type_t::top || block_type == block_type_t::subst);
-    const auto *job_list = ps->ast.top()->as<ast::job_list_t>();
+    const auto *job_list = ps->ast.top()->as_job_list();
     if (!job_list->empty()) {
         // Execute the top job list.
         return this->eval_node(ps, *job_list, io, job_group, block_type);
@@ -680,7 +675,7 @@ RustFFIJobList parser_t::ffi_jobs() const {
 bool parser_t::ffi_has_funtion_block() const {
     for (const auto &b : blocks()) {
         if (b.is_function_call()) {
-             return true;
+            return true;
         }
     }
     return false;

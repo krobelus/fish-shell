@@ -9,6 +9,19 @@
 #include "parse_constants.h"
 #include "tokenizer.h"
 
+#if INCLUDE_RUST_HEADERS
+#include "parse_tree.rs.h"
+using parsed_source_ref_t = ParsedSourceRefFFI;
+#else
+struct ParsedSourceRefFFI;
+using parsed_source_ref_t = ParsedSourceRefFFI;
+#endif
+
+/// Error message when a command may not be in a pipeline.
+#define INVALID_PIPELINE_CMD_ERR_MSG _(L"The '%ls' command can not be used in a pipeline")
+
+#if 0
+
 /// A struct representing the token type that we use internally.
 struct parse_token_t {
     parse_token_type_t type;  // The type of the token as represented by the parser
@@ -54,7 +67,6 @@ using parsed_source_ref_t = std::shared_ptr<const parsed_source_t>;
 parsed_source_ref_t parse_source(wcstring &&src, parse_tree_flags_t flags,
                                  parse_error_list_t *errors);
 
-/// Error message when a command may not be in a pipeline.
-#define INVALID_PIPELINE_CMD_ERR_MSG _(L"The '%ls' command can not be used in a pipeline")
+#endif
 
 #endif

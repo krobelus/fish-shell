@@ -4,6 +4,7 @@
 #![allow(clippy::needless_return)]
 #![allow(clippy::manual_is_ascii_check)]
 
+mod ast;
 mod common;
 mod fd_readable_set;
 mod fds;
@@ -19,6 +20,7 @@ mod flog;
 mod future_feature_flags;
 mod nix;
 mod parse_constants;
+mod parse_tree;
 mod redirection;
 mod signal;
 mod smoke;

@@ -330,7 +330,7 @@ static bool statement_get_expanded_command(const wcstring &src,
                                            const ast::decorated_statement_t &stmt,
                                            const operation_context_t &ctx, wcstring *out_cmd) {
     // Get the command. Try expanding it. If we cannot, it's an error.
-    maybe_t<wcstring> cmd = stmt.command.source(src);
+    maybe_t<wcstring> cmd = stmt.command().source(src);
     if (!cmd) return false;
     expand_result_t err = expand_to_command_and_args(*cmd, ctx, out_cmd, nullptr);
     return err == expand_result_t::ok;
@@ -412,21 +412,21 @@ static bool has_expand_reserved(const wcstring &str) {
 // command (as a string), if any. This is used to validate autosuggestions.
 static void autosuggest_parse_command(const wcstring &buff, const operation_context_t &ctx,
                                       wcstring *out_expanded_command, wcstring *out_arg) {
-    auto ast = ast::ast_t::parse(
-        buff, parse_flag_continue_after_error | parse_flag_accept_incomplete_tokens);
+    auto ast =
+        ast_parse(buff, parse_flag_continue_after_error | parse_flag_accept_incomplete_tokens);
 
     // Find the first statement.
     const ast::decorated_statement_t *first_statement = nullptr;
-    if (const ast::job_conjunction_t *jc = ast.top()->as<ast::job_list_t>()->at(0)) {
-        first_statement = jc->job.statement.contents->try_as<ast::decorated_statement_t>();
+    if (const ast::job_conjunction_t *jc = ast->top()->as_job_list()->at(0)) {
+        first_statement = jc->job().statement().contents().try_as_decorated_statement();
     }
 
     if (first_statement &&
         statement_get_expanded_command(buff, *first_statement, ctx, out_expanded_command)) {
         // Check if the first argument or redirection is, in fact, an argument.
-        if (const auto *arg_or_redir = first_statement->args_or_redirs.at(0)) {
+        if (const auto *arg_or_redir = first_statement->args_or_redirs().at(0)) {
             if (arg_or_redir && arg_or_redir->is_argument()) {
-                *out_arg = arg_or_redir->argument().source(buff);
+                *out_arg = *arg_or_redir->argument().source(buff);
             }
         }
     }
@@ -790,7 +790,7 @@ class highlighter_t {
     // Working directory.
     const wcstring working_directory;
     // The ast we produced.
-    ast::ast_t ast;
+    rust::Box<Ast> ast;
     // The resulting colors.
     using color_array_t = std::vector<highlight_spec_t>;
     color_array_t color_array;
@@ -821,7 +821,8 @@ class highlighter_t {
    public:
     // Visit the children of a node.
     void visit_children(const ast::node_t &node) {
-        ast::node_visitor(*this).accept_children_of(&node);
+        // TODO
+        // ast::node_visitor(*this).accept_children_of(&node);
     }
 
     // AST visitor implementations.
@@ -847,7 +848,7 @@ class highlighter_t {
           ctx(ctx),
           io_ok(can_do_io),
           working_directory(std::move(wd)),
-          ast(ast::ast_t::parse(buff, ast_flags)) {}
+          ast(ast_parse(buff, ast_flags)) {}
 
     // Perform highlighting, returning an array of colors.
     color_array_t highlight();
@@ -961,70 +962,71 @@ static bool range_is_potential_path(const wcstring &src, const source_range_t &r
 }
 
 void highlighter_t::visit(const ast::keyword_base_t &kw) {
-    highlight_role_t role = highlight_role_t::normal;
-    switch (kw.kw) {
-        case parse_keyword_t::kw_begin:
-        case parse_keyword_t::kw_builtin:
-        case parse_keyword_t::kw_case:
-        case parse_keyword_t::kw_command:
-        case parse_keyword_t::kw_else:
-        case parse_keyword_t::kw_end:
-        case parse_keyword_t::kw_exec:
-        case parse_keyword_t::kw_for:
-        case parse_keyword_t::kw_function:
-        case parse_keyword_t::kw_if:
-        case parse_keyword_t::kw_in:
-        case parse_keyword_t::kw_switch:
-        case parse_keyword_t::kw_while:
-            role = highlight_role_t::keyword;
-            break;
+    // TODO
+    // highlight_role_t role = highlight_role_t::normal;
+    // switch (kw.kw) {
+    //     case parse_keyword_t::kw_begin:
+    //     case parse_keyword_t::kw_builtin:
+    //     case parse_keyword_t::kw_case:
+    //     case parse_keyword_t::kw_command:
+    //     case parse_keyword_t::kw_else:
+    //     case parse_keyword_t::kw_end:
+    //     case parse_keyword_t::kw_exec:
+    //     case parse_keyword_t::kw_for:
+    //     case parse_keyword_t::kw_function:
+    //     case parse_keyword_t::kw_if:
+    //     case parse_keyword_t::kw_in:
+    //     case parse_keyword_t::kw_switch:
+    //     case parse_keyword_t::kw_while:
+    //         role = highlight_role_t::keyword;
+    //         break;
 
-        case parse_keyword_t::kw_and:
-        case parse_keyword_t::kw_or:
-        case parse_keyword_t::kw_not:
-        case parse_keyword_t::kw_exclam:
-        case parse_keyword_t::kw_time:
-            role = highlight_role_t::operat;
-            break;
+    //     case parse_keyword_t::kw_and:
+    //     case parse_keyword_t::kw_or:
+    //     case parse_keyword_t::kw_not:
+    //     case parse_keyword_t::kw_exclam:
+    //     case parse_keyword_t::kw_time:
+    //         role = highlight_role_t::operat;
+    //         break;
 
-        case parse_keyword_t::none:
-            break;
-    }
-    color_node(kw, role);
+    //     case parse_keyword_t::none:
+    //         break;
+    // }
+    // color_node(kw, role);
 }
 
 void highlighter_t::visit(const ast::token_base_t &tok) {
-    maybe_t<highlight_role_t> role = highlight_role_t::normal;
-    switch (tok.type) {
-        case parse_token_type_t::end:
-        case parse_token_type_t::pipe:
-        case parse_token_type_t::background:
-            role = highlight_role_t::statement_terminator;
-            break;
+    // maybe_t<highlight_role_t> role = highlight_role_t::normal;
+    // switch (tok.type) {
+    //     case parse_token_type_t::end:
+    //     case parse_token_type_t::pipe:
+    //     case parse_token_type_t::background:
+    //         role = highlight_role_t::statement_terminator;
+    //         break;
 
-        case parse_token_type_t::andand:
-        case parse_token_type_t::oror:
-            role = highlight_role_t::operat;
-            break;
+    //     case parse_token_type_t::andand:
+    //     case parse_token_type_t::oror:
+    //         role = highlight_role_t::operat;
+    //         break;
 
-        case parse_token_type_t::string:
-            // Assume all strings are params. This handles e.g. the variables a for header or
-            // function header. Other strings (like arguments to commands) need more complex
-            // handling, which occurs in their respective overrides of visit().
-            role = highlight_role_t::param;
+    //     case parse_token_type_t::string:
+    //         // Assume all strings are params. This handles e.g. the variables a for header or
+    //         // function header. Other strings (like arguments to commands) need more complex
+    //         // handling, which occurs in their respective overrides of visit().
+    //         role = highlight_role_t::param;
 
-        default:
-            break;
-    }
-    if (role) color_node(tok, *role);
+    //     default:
+    //         break;
+    // }
+    // if (role) color_node(tok, *role);
 }
 
 void highlighter_t::visit(const ast::semi_nl_t &semi_nl) {
-    color_node(semi_nl, highlight_role_t::statement_terminator);
+    color_node(*semi_nl.ptr(), highlight_role_t::statement_terminator);
 }
 
 void highlighter_t::visit(const ast::argument_t &arg, bool cmd_is_cd, bool options_allowed) {
-    color_as_argument(arg, options_allowed);
+    color_as_argument(*arg.ptr(), options_allowed);
     if (!io_still_ok()) {
         return;
     }
@@ -1033,7 +1035,7 @@ void highlighter_t::visit(const ast::argument_t &arg, bool cmd_is_cd, bool optio
     bool at_cursor = cursor.has_value() && arg.source_range().contains_inclusive(*cursor);
     if (cmd_is_cd) {
         // Mark this as an error if it's not 'help' and not a valid cd path.
-        wcstring param = arg.source(this->buff);
+        wcstring param = *arg.source(this->buff);
         if (expand_one(param, expand_flag::skip_cmdsubst, ctx)) {
             bool is_help =
                 string_prefixes_string(param, L"--help") || string_prefixes_string(param, L"-h");
@@ -1041,22 +1043,23 @@ void highlighter_t::visit(const ast::argument_t &arg, bool cmd_is_cd, bool optio
                 is_valid_path = is_potential_cd_path(param, at_cursor, working_directory, ctx,
                                                      PATH_EXPAND_TILDE);
                 if (!is_valid_path) {
-                    this->color_node(arg, highlight_role_t::error);
+                    this->color_node(*arg.ptr(), highlight_role_t::error);
                 }
             }
         }
-    } else if (range_is_potential_path(buff, arg.range, at_cursor, ctx, working_directory)) {
+    } else if (range_is_potential_path(buff, arg.range(), at_cursor, ctx, working_directory)) {
         is_valid_path = true;
     }
     if (is_valid_path)
-        for (size_t i = arg.range.start, end = arg.range.start + arg.range.length; i < end; i++)
+        for (size_t i = arg.range().start, end = arg.range().start + arg.range().length; i < end;
+             i++)
             this->color_array.at(i).valid_path = true;
 }
 
 void highlighter_t::visit(const ast::variable_assignment_t &varas) {
-    color_as_argument(varas);
+    color_as_argument(*varas.ptr());
     // Highlight the '=' in variable assignments as an operator.
-    auto where = variable_assignment_equals_pos(varas.source(this->buff));
+    auto where = *variable_assignment_equals_pos(varas.source(this->buff));
     if (where) {
         size_t equals_loc = varas.source_range().start + *where;
         this->color_array.at(equals_loc) = highlight_role_t::operat;
@@ -1126,7 +1129,7 @@ void highlighter_t::visit(const ast::block_statement_t &block) {
     this->visit(block.args_or_redirs);
     const ast::node_t &bh = *block.header.contents;
     size_t pending_variables_count = this->pending_variables.size();
-    if (const auto *fh = bh.try_as<ast::for_header_t>()) {
+    if (const auto *fh = bh.try_as_for_header()) {
         auto var_name = fh->var_name.source(this->buff);
         pending_variables.push_back(std::move(var_name));
     }
