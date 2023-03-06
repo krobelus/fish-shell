@@ -121,5 +121,6 @@ enum RustBuiltin : int32_t {
     Realpath,
     Return,
     Wait,
+    Printf,
 };
 #endif
