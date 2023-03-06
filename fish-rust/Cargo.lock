@@ -380,6 +380,7 @@ dependencies = [
  "num-traits",
  "once_cell",
  "pcre2",
+ "printf-compat",
  "rand",
  "unixstring",
  "widestring",
@@ -784,6 +785,16 @@ checksum = "6c8646e95016a7a6c4adea95bafa8a16baab64b583356217f2c85db4a39d9a86"
 dependencies = [
  "proc-macro2",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "printf-compat"
+version = "0.1.1"
+dependencies = [
+ "bitflags",
+ "itertools 0.9.0",
+ "libc",
+ "widestring",
 ]
 
 [[package]]

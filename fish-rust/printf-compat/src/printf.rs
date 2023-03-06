@@ -38,10 +38,13 @@ macro_rules! sprintf {
         $($arg:expr),* // arguments
         $(,)? // optional trailing comma
     ) => {
-        $crate::printf::sprintf_c_locale(
-            widestring::utf32str!($fmt),
-            &[$($crate::args::ToArg::to_arg($arg)),*]
-        )
+        {
+            use $crate::args::ToArg;
+            $crate::printf::sprintf_c_locale(
+                widestring::utf32str!($fmt),
+                &[$($arg.to_arg()),*]
+            )
+        }
     };
 
     // Variant which allows a runtime format string, which must be of type &wstr.
@@ -50,10 +53,13 @@ macro_rules! sprintf {
         $($arg:expr),* // arguments
         $(,)? // optional trailing comma
     ) => {
-        $crate::printf::sprintf_c_locale(
-            $fmt,
-            &[$($crate::args::ToArg::to_arg($arg)),*]
-        )
+        {
+            use $crate::args::ToArg;
+            $crate::printf::sprintf_c_locale(
+                $fmt,
+                &[$($arg.to_arg()),*]
+            )
+        }
     };
 }
 
