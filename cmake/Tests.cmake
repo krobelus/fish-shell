@@ -213,3 +213,10 @@ add_test(
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/fish-rust/fast-float/"
 )
 add_test_target("cargo-test-fast-float")
+
+add_test_target(
+    NAME "cargo-test-printf-compat"
+    COMMAND cargo test
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/fish-rust/printf-compat/"
+)
+add_test_target("cargo-test-printf-compat")
