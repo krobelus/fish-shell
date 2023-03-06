@@ -1,300 +1,524 @@
 //! Various ways to output formatting data.
 
-use core::cell::Cell;
-use core::ffi::*;
 use core::fmt;
-use core::str::from_utf8;
 
-#[cfg(feature = "std")]
-pub use yes_std::*;
+use super::{ArgList, Argument, DoubleFormat, Flags, Locale, SignedInt, Specifier, UnsignedInt};
+use crate::libc_callout::libc_sprintf_f64;
+use crate::{wstr, WString};
 
-use crate::{Argument, DoubleFormat, Flags, Specifier};
+/// Saturate a u64 to a usize.
+/// Note this is a no-op on 64 bit.
+trait SaturateUSize {
+    fn to_usize_sat(self) -> usize;
+}
 
-struct DummyWriter(usize);
-
-impl fmt::Write for DummyWriter {
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        self.0 += s.len();
-        Ok(())
+impl SaturateUSize for u64 {
+    #[inline(always)]
+    fn to_usize_sat(self) -> usize {
+        self.min(usize::MAX as u64) as usize
     }
 }
 
-struct WriteCounter<'a, T: fmt::Write>(&'a mut T, usize);
-
-impl<'a, T: fmt::Write> fmt::Write for WriteCounter<'a, T> {
+/// Adapter for implementing `fmt::Write` for `WideWrite`, avoiding orphan rule.
+pub struct WideWriteAdapt<'a, T: ?Sized>(&'a mut T);
+impl<'a, T: WideWrite + ?Sized> fmt::Write for WideWriteAdapt<'a, T> {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        self.1 += s.len();
         self.0.write_str(s)
     }
 }
 
+/// The trait for receiving printf output.
+pub trait WideWrite {
+    /// Write a wstr.
+    fn write_wstr(&mut self, s: &wstr) -> fmt::Result;
+
+    /// Write a str.
+    fn write_str(&mut self, s: &str) -> fmt::Result;
+
+    /// Allows using write! macro.
+    fn write_fmt(&mut self, args: fmt::Arguments) -> fmt::Result {
+        let mut adapt = WideWriteAdapt(self);
+        fmt::write(&mut adapt, args)
+    }
+}
+
+/// Wide strings implement [`WideWrite`].
+impl WideWrite for WString {
+    fn write_wstr(&mut self, s: &wstr) -> fmt::Result {
+        self.push_utfstr(s);
+        Ok(())
+    }
+
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.push_str(s);
+        Ok(())
+    }
+}
+
+/// A Writer which counts how many chars are written.
+struct WriteCounter(usize);
+
+impl WideWrite for WriteCounter {
+    fn write_wstr(&mut self, s: &wstr) -> fmt::Result {
+        self.0 += s.as_char_slice().len();
+        Ok(())
+    }
+
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.0 += s.chars().count();
+        Ok(())
+    }
+}
+
 fn write_str(
-    w: &mut impl fmt::Write,
+    w: &mut impl WideWrite,
     flags: Flags,
-    width: c_int,
-    precision: Option<c_int>,
-    b: &[u8],
+    width: usize,
+    precision: Option<u64>,
+    b: &[char],
 ) -> fmt::Result {
-    let string = from_utf8(b).map_err(|_| fmt::Error)?;
-    let precision = precision.unwrap_or(string.len() as c_int);
+    let string: String = b.iter().collect();
+    let precision = precision.unwrap_or(string.len() as u64);
     if flags.contains(Flags::LEFT_ALIGN) {
         write!(
             w,
             "{:1$.prec$}",
             string,
-            width as usize,
-            prec = precision as usize
+            width,
+            prec = precision.to_usize_sat()
         )
     } else {
         write!(
             w,
             "{:>1$.prec$}",
             string,
-            width as usize,
-            prec = precision as usize
+            width,
+            prec = precision.to_usize_sat()
         )
     }
 }
 
-macro_rules! define_numeric {
-    ($w: expr, $data: expr, $flags: expr, $width: expr, $precision: expr) => {
-        define_numeric!($w, $data, $flags, $width, $precision, "")
-    };
-    ($w: expr, $data: expr, $flags: expr, $width: expr, $precision: expr, $ty:expr) => {{
-        use fmt::Write;
-        if $flags.contains(Flags::LEFT_ALIGN) {
-            if $flags.contains(Flags::PREPEND_PLUS) {
-                write!(
-                    $w,
-                    concat!("{:<+width$.prec$", $ty, "}"),
-                    $data,
-                    width = $width as usize,
-                    prec = $precision as usize
-                )
-            } else if $flags.contains(Flags::PREPEND_SPACE) && !$data.is_sign_negative() {
-                write!(
-                    $w,
-                    concat!(" {:<width$.prec$", $ty, "}"),
-                    $data,
-                    width = ($width as usize).wrapping_sub(1),
-                    prec = $precision as usize
-                )
-            } else {
-                write!(
-                    $w,
-                    concat!("{:<width$.prec$", $ty, "}"),
-                    $data,
-                    width = $width as usize,
-                    prec = $precision as usize
-                )
+/// Given that we have formatted a value into a string in a locale-oblivious way, apply a locale to it.
+/// That means inserting thousands separators if needed, and perhaps replacing the decimal point.
+fn apply_locale(input: &mut WString, locale: &Locale, flags: Flags, fixup_decimal: bool) {
+    // We expect to have (optionally) a leading +/-/space.
+    // Note locales are not used for hex output.
+
+    // Replace up to one decimal point if needed.
+    if fixup_decimal && locale.decimal_point != '.' {
+        for c in input.as_char_slice_mut().iter_mut() {
+            if *c == '.' {
+                *c = locale.decimal_point;
+                break;
             }
-        } else if $flags.contains(Flags::PREPEND_PLUS) {
-            if $flags.contains(Flags::PREPEND_ZERO) {
-                write!(
-                    $w,
-                    concat!("{:+0width$.prec$", $ty, "}"),
-                    $data,
-                    width = $width as usize,
-                    prec = $precision as usize
-                )
-            } else {
-                write!(
-                    $w,
-                    concat!("{:+width$.prec$", $ty, "}"),
-                    $data,
-                    width = $width as usize,
-                    prec = $precision as usize
-                )
-            }
-        } else if $flags.contains(Flags::PREPEND_ZERO) {
-            if $flags.contains(Flags::PREPEND_SPACE) && !$data.is_sign_negative() {
-                let mut d = DummyWriter(0);
-                let _ = write!(
-                    d,
-                    concat!("{:.prec$", $ty, "}"),
-                    $data,
-                    prec = $precision as usize
-                );
-                if d.0 + 1 > $width as usize {
-                    $width += 1;
-                }
-                write!(
-                    $w,
-                    concat!(" {:0width$.prec$", $ty, "}"),
-                    $data,
-                    width = ($width as usize).wrapping_sub(1),
-                    prec = $precision as usize
-                )
-            } else {
-                write!(
-                    $w,
-                    concat!("{:0width$.prec$", $ty, "}"),
-                    $data,
-                    width = $width as usize,
-                    prec = $precision as usize
-                )
-            }
-        } else {
-            if $flags.contains(Flags::PREPEND_SPACE) && !$data.is_sign_negative() {
-                let mut d = DummyWriter(0);
-                let _ = write!(
-                    d,
-                    concat!("{:.prec$", $ty, "}"),
-                    $data,
-                    prec = $precision as usize
-                );
-                if d.0 + 1 > $width as usize {
-                    $width = d.0 as i32 + 1;
-                }
-            }
-            write!(
-                $w,
-                concat!("{:width$.prec$", $ty, "}"),
-                $data,
-                width = $width as usize,
-                prec = $precision as usize
-            )
         }
-    }};
+    }
+
+    // Apply thousands separators if needed.
+    if flags.contains(Flags::THOUSANDS_GROUPING) && locale.thousands_sep.is_some() {
+        let thousands_sep = locale.thousands_sep.unwrap();
+
+        // We need special handling for leading zeros, which may arise if the string was formatted with a precision.
+        // Example: "%'.10d" 123456 should produce "000123,456" and NOT "000,123,456".
+        let chars = input.as_char_slice();
+
+        // Find the first sequence of digits.
+        let mut digits_start = 0;
+        while digits_start < chars.len() && !chars[digits_start].is_ascii_digit() {
+            digits_start += 1;
+        }
+
+        // Find the first nonzero digit.
+        let mut nonzeros_start = digits_start;
+        while nonzeros_start < chars.len() && chars[nonzeros_start] == '0' {
+            nonzeros_start += 1;
+        }
+
+        // Find the one past the last digit.
+        let mut digits_end = nonzeros_start;
+        while digits_end < chars.len() && chars[digits_start].is_ascii_digit() {
+            digits_end += 1;
+        }
+
+        // Produce digits from our nonzero region using separators.
+        let digits = &chars[nonzeros_start..digits_end];
+        let mut digits_with_sep = WString::with_capacity(digits.len() + digits.len() / 3);
+
+        // Go right to left; we construct in reverse.
+        let mut group_iter = locale.digit_group_iter();
+        let mut remaining_in_group = group_iter.next_group();
+        for digit in digits.iter().rev() {
+            assert!(digit.is_ascii_digit());
+            if remaining_in_group == 0 {
+                digits_with_sep.push(thousands_sep);
+                remaining_in_group = group_iter.next_group();
+            }
+            remaining_in_group -= 1;
+            digits_with_sep.push(*digit);
+        }
+
+        // Reverse the string.
+        digits_with_sep.as_char_slice_mut().reverse();
+
+        // Figure out how many leading zeros will have been replaced with separators.
+        // This the smaller of the number of leading zeros, and the number of separators inserted.
+        let zeros_to_eat = std::cmp::min(
+            digits_with_sep.len() - digits.len(),
+            nonzeros_start - digits_start,
+        );
+
+        input.replace_range(
+            (nonzeros_start - zeros_to_eat)..digits_end,
+            &digits_with_sep,
+        );
+    }
 }
 
-macro_rules! define_unumeric {
-    ($w: expr, $data: expr, $flags: expr, $width: expr, $precision: expr) => {
-        define_unumeric!($w, $data, $flags, $width, $precision, "")
-    };
-    ($w: expr, $data: expr, $flags: expr, $width: expr, $precision: expr, $ty:expr) => {{
-        if $flags.contains(Flags::LEFT_ALIGN) {
-            if $flags.contains(Flags::ALTERNATE_FORM) {
-                write!(
-                    $w,
-                    concat!("{:<#width$", $ty, "}"),
-                    $data,
-                    width = $width as usize
-                )
-            } else {
-                write!(
-                    $w,
-                    concat!("{:<width$", $ty, "}"),
-                    $data,
-                    width = $width as usize
-                )
-            }
-        } else if $flags.contains(Flags::ALTERNATE_FORM) {
-            if $flags.contains(Flags::PREPEND_ZERO) {
-                write!(
-                    $w,
-                    concat!("{:#0width$", $ty, "}"),
-                    $data,
-                    width = $width as usize
-                )
-            } else {
-                write!(
-                    $w,
-                    concat!("{:#width$", $ty, "}"),
-                    $data,
-                    width = $width as usize
-                )
-            }
-        } else if $flags.contains(Flags::PREPEND_ZERO) {
-            write!(
-                $w,
-                concat!("{:0width$", $ty, "}"),
-                $data,
-                width = $width as usize
-            )
-        } else {
-            write!(
-                $w,
-                concat!("{:width$", $ty, "}"),
-                $data,
-                width = $width as usize
-            )
+// Insert the given character into the string the given number of times at the given index.
+fn insert_chars(input: &mut WString, idx: usize, c: char, count: usize) {
+    // TODO: we can avoid a temporary if we use unsafe.
+    let tmp = WString::from_chars(std::iter::repeat(c).take(count).collect::<Vec<_>>());
+    input.insert_utfstr(idx, &tmp);
+}
+
+fn apply_numeric_padding(input: &mut WString, width: usize, flags: Flags) {
+    // Given that we have have formatted a string with a numeric formatter and applied
+    // locale bits, pad the string to at least the given width, respecting the flags.
+    // There are three possible padding types:
+    //   1. Pad on right with spaces.
+    //   2. Pad on left with spaces.
+    //   3. Pad on left with zeros, inserting them before any +/-/space sign.
+    let padding_req = width.saturating_sub(input.as_char_slice().len());
+    if padding_req == 0 {
+        return;
+    }
+
+    // Handle left-or-right alignment with spaces.
+    // Left-adjust takes precedence over zero-padding.
+    if flags.contains(Flags::LEFT_ALIGN) {
+        // Left align, insert at end.
+        insert_chars(input, input.as_char_slice().len(), ' ', padding_req);
+    } else if !flags.contains(Flags::PREPEND_ZERO) {
+        // Right align, insert at start.
+        insert_chars(input, 0, ' ', padding_req);
+    } else {
+        // Zero pad. Skip a leading +/-/space, and a leading 0x.
+        let mut sign_idx = 0;
+        let chars = input.as_char_slice();
+        if sign_idx < chars.len() && matches!(chars[sign_idx], '+' | '-' | ' ') {
+            sign_idx += 1;
         }
-    }};
+        if sign_idx + 1 < chars.len()
+            && chars[sign_idx] == '0'
+            && matches!(chars[sign_idx + 1], 'x' | 'X')
+        {
+            sign_idx += 2;
+        }
+        insert_chars(input, sign_idx, '0', padding_req);
+    }
+}
+
+/// Format a non-finite value.
+#[allow(clippy::collapsible_else_if)]
+fn write_double_non_finite(
+    w: &mut impl WideWrite,
+    value: f64,
+    flags: Flags,
+    upper: bool,
+) -> fmt::Result {
+    assert!(!value.is_finite());
+    // Do not pad with zeros as we are not finite, since 00000IN` makes no sense.
+    // Do not place a leading + or ' ' if we are NaN, since +NaN makes no sense.
+    // However +inf does make sense.
+    if value == f64::INFINITY {
+        if flags.contains(Flags::PREPEND_PLUS) {
+            if upper {
+                write!(w, "+INF")
+            } else {
+                write!(w, "+inf")
+            }
+        } else {
+            if upper {
+                write!(w, "INF")
+            } else {
+                write!(w, "inf")
+            }
+        }
+    } else if value == f64::NEG_INFINITY {
+        if upper {
+            write!(w, "-INF")
+        } else {
+            write!(w, "-inf")
+        }
+    } else if value.is_nan() {
+        if upper {
+            write!(w, "NAN")
+        } else {
+            write!(w, "nan")
+        }
+    } else {
+        unreachable!()
+    }
+}
+
+/// Write a float in decimal form. This supports Normal and UpperNormal which are identical.
+/// width and align is ignored - this will be fixed up later (necessary for locale support).
+fn write_double_decimal(
+    w: &mut impl WideWrite,
+    value: f64,
+    flags: Flags,
+    precision: u64,
+) -> fmt::Result {
+    assert!(value.is_finite());
+    let prec = precision.to_usize_sat();
+    if flags.contains(Flags::PREPEND_PLUS) {
+        write!(w, "{:+.*}", prec, value)
+    } else if flags.contains(Flags::PREPEND_SPACE) && !value.is_sign_negative() {
+        // note leading space
+        write!(w, " {:.*}", prec, value)
+    } else {
+        write!(w, "{:.*}", prec, value)
+    }
+}
+
+/// Write an unsigned integer value. This supports Hex/UpperHex/Octal/Uint.
+/// width and align is ignored - this will be fixed up later (necessary for locale support).
+fn write_uint(
+    w: &mut impl WideWrite,
+    val: UnsignedInt,
+    flags: Flags,
+    precision: u64,
+    mode: char,
+) -> fmt::Result {
+    assert!(matches!(mode, 'x' | 'X' | 'o' | 'u'));
+    // Note that the precision is re-interpreted as a width.
+    let width = precision.to_usize_sat();
+    // PREPEND_PLUS and PREPEND_SPACE are ignored for unsigned values.
+    if flags.contains(Flags::ALTERNATE_FORM) {
+        match mode {
+            'x' => write!(w, "{:#0width$x}", val, width = width),
+            // Need temporary storage because Rust emits 0x and not 0X.
+            'X' => {
+                let mut tmp = WString::new();
+                write!(tmp, "{:#0width$x}", val, width = width)?;
+                for c in tmp.as_char_slice_mut() {
+                    if *c == 'x' {
+                        *c = 'X';
+                        break;
+                    }
+                }
+                w.write_wstr(&tmp)
+            }
+            'o' => {
+                // Need to remove the 'o' that Rust outputs.
+                let mut tmp = WString::new();
+                write!(tmp, "{:#0width$o}", val, width = width + 1)?;
+                if let Some(idx) = tmp.as_char_slice().iter().position(|c| *c == 'o') {
+                    tmp.remove(idx);
+                }
+                w.write_wstr(&tmp)
+            }
+            'u' => write!(w, "{:#0width$}", val, width = width),
+            _ => unreachable!(),
+        }
+    } else {
+        match mode {
+            'x' => write!(w, "{:0width$x}", val, width = width),
+            'X' => write!(w, "{:0width$X}", val, width = width),
+            'o' => write!(w, "{:0width$o}", val, width = width),
+            'u' => write!(w, "{:0width$}", val, width = width),
+            _ => unreachable!(),
+        }
+    }
+}
+
+/// Write a signed integer value. This supports the 'd' conversion.
+fn write_sint(
+    w: &mut impl WideWrite,
+    val: SignedInt,
+    flags: Flags,
+    precision: u64,
+    mode: char,
+) -> fmt::Result {
+    assert!(matches!(mode, 'd'));
+    // Note that the precision is re-interpreted as a width.
+    let width = precision.to_usize_sat();
+    let width_1 = width.saturating_sub(1);
+    let negative = val.is_sign_negative();
+    // PREPEND_PLUS and PREPEND_SPACE are respected for signed values.
+    match mode {
+        'd' => {
+            if flags.contains(Flags::PREPEND_PLUS) && !negative {
+                write!(w, "+{:0width$}", val, width = width_1)
+            } else if flags.contains(Flags::PREPEND_SPACE) && !negative {
+                write!(w, " {:0width$}", val, width = width_1)
+            } else {
+                write!(w, "{:0width$}", val, width = width)
+            }
+        }
+        _ => unreachable!(),
+    }
+}
+
+/// Write an f64. This supports 'f', 'F', 'g', 'G', 'e', 'E', 'a', and 'A'.
+fn write_double(
+    w: &mut impl WideWrite,
+    value: f64,
+    flags: Flags,
+    precision: u64,
+    format: DoubleFormat,
+) -> fmt::Result {
+    if !value.is_finite() {
+        // Our double is +/- inf, or nan. All values are formatted the same.
+        return write_double_non_finite(w, value, flags, format.is_upper());
+    }
+    match format {
+        DoubleFormat::Normal | DoubleFormat::UpperNormal => {
+            write_double_decimal(w, value, flags, precision)
+        }
+
+        // The other floats we call out to the real printf, as implementing these in Rust is too difficult.
+        DoubleFormat::Hex
+        | DoubleFormat::UpperHex
+        | DoubleFormat::Scientific
+        | DoubleFormat::UpperScientific
+        | DoubleFormat::Auto
+        | DoubleFormat::UpperAuto => {
+            libc_sprintf_f64(w, value, flags, precision, format.to_spec_char())
+        }
+    }
+}
+
+/// Write a single argument to the writer, respecting the given locale.
+fn write_1_arg_locale(mut arg: Argument, locale: &Locale, w: &mut impl WideWrite) -> fmt::Result {
+    let mut storage_obj = WString::new();
+    let storage = &mut storage_obj;
+    arg = munge_arg(arg);
+    let Argument {
+        mut flags,
+        width,
+        precision,
+        specifier,
+    } = arg;
+    let width = width.to_usize_sat();
+    let mut do_locale = false;
+    let mut fixup_decimal = false;
+    let mut respect_zero_padding = true;
+    // In general we follow the following:
+    //  1. Write into our temporary storage.
+    //  2. Apply locale bits (thousands sep, decimal separator).
+    //  3. Apply width padding.
+    //  4. Write that.
+    // However we can write directly into the writer, for some simple cases; note the early returns below.
+    match specifier {
+        Specifier::Percent => return w.write_str("%"),
+        Specifier::Literals(data) => {
+            return write_str(w, flags, width, precision, data);
+        }
+        Specifier::String(data) => {
+            return write_str(w, flags, width, precision, data.as_char_slice());
+        }
+        Specifier::Char(data) => {
+            if flags.contains(Flags::LEFT_ALIGN) {
+                return write!(w, "{:width$}", data, width = width);
+            } else {
+                return write!(w, "{:>width$}", data, width = width);
+            }
+        }
+        Specifier::Pointer(data) => {
+            if flags.contains(Flags::LEFT_ALIGN) {
+                return write!(w, "{:<width$p}", data, width = width);
+            } else if flags.contains(Flags::PREPEND_ZERO) {
+                return write!(w, "{:0width$p}", data, width = width);
+            } else {
+                return write!(w, "{:width$p}", data, width = width);
+            }
+        }
+
+        // The following numeric conversions may need width padding, but do not need localization.
+        Specifier::Hex(data) | Specifier::UpperHex(data) | Specifier::Octal(data) => {
+            write_uint(
+                storage,
+                data,
+                flags,
+                precision.unwrap_or(0),
+                specifier.to_spec_char(),
+            )?;
+        }
+
+        // The remaining may need width padding and also localization.
+        Specifier::Uint(data) => {
+            do_locale = true;
+            write_uint(storage, data, flags, precision.unwrap_or(0), 'u')?;
+        }
+        Specifier::Int(data) => {
+            do_locale = true;
+            write_sint(storage, data, flags, precision.unwrap_or(0), 'd')?;
+        }
+        Specifier::Double { value, format } => {
+            do_locale = value.is_finite();
+            fixup_decimal = format.may_have_decimal();
+            // do not respect zero padding for inf/nan; "+000INF" would be silly.
+            respect_zero_padding = value.is_finite();
+            write_double(storage, value, flags, precision.unwrap_or(6), format)?;
+        }
+    };
+    if do_locale {
+        apply_locale(storage, locale, flags, fixup_decimal);
+    }
+    if !respect_zero_padding {
+        flags.remove(Flags::PREPEND_ZERO);
+    }
+    apply_numeric_padding(storage, width, flags);
+    w.write_wstr(storage)
+}
+
+/// Apply some special cases to the given argument, to avoid replicating this logic.
+fn munge_arg(mut arg: Argument) -> Argument {
+    // "If a precision is given with a numeric conversion (d, i, o, u, x, and X), the 0 flag is ignored."
+    if arg.specifier.is_int_numeric() && arg.precision.is_some() {
+        arg.flags.remove(Flags::PREPEND_ZERO);
+    }
+    arg
+}
+
+/// Write to a struct that implements [`WideWrite`].
+pub fn wide_write<'a>(
+    w: &'a mut impl WideWrite,
+    locale: &'a Locale,
+) -> impl FnMut(Argument) -> fmt::Result + 'a {
+    move |arg| write_1_arg_locale(arg, locale, w)
+}
+
+// Adapts `fmt::Write` to `WideWrite`.
+struct FmtWrite<'a, T>(&'a mut T);
+
+impl<'a, T> WideWrite for FmtWrite<'a, T>
+where
+    T: fmt::Write,
+{
+    /// Write a wstr.
+    fn write_wstr(&mut self, s: &wstr) -> fmt::Result {
+        self.0.write_str(&s.to_string())
+    }
+
+    /// Write a str.
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.0.write_str(s)
+    }
+
+    /// Allows using write! macro.
+    fn write_fmt(&mut self, args: fmt::Arguments) -> fmt::Result {
+        self.0.write_fmt(args)
+    }
 }
 
 /// Write to a struct that implements [`fmt::Write`].
-///
-/// # Differences
-///
-/// There are a few differences from standard printf format:
-///
-/// - only valid UTF-8 data can be printed.
-/// - an `X` format specifier with a `#` flag prints the hex data in uppercase,
-///   but the leading `0x` is still lowercase
-/// - an `o` format specifier with a `#` flag precedes the number with an `o`
-///   instead of `0`
-/// - `g`/`G` (shorted floating point) is aliased to `f`/`F`` (decimal floating
-///   point)
-/// - same for `a`/`A` (hex floating point)
-/// - the `n` format specifier, [`Specifier::WriteBytesWritten`], is not
-///   implemented and will cause an error if encountered.
-pub fn fmt_write(w: &mut impl fmt::Write) -> impl FnMut(Argument) -> c_int + '_ {
-    use fmt::Write;
-    move |Argument {
-              flags,
-              mut width,
-              precision,
-              specifier,
-          }| {
-        let mut w = WriteCounter(w, 0);
-        let w = &mut w;
-        let res = match specifier {
-            Specifier::Percent => w.write_char('%'),
-            Specifier::Bytes(data) => write_str(w, flags, width, precision, data),
-            Specifier::String(data) => write_str(w, flags, width, precision, data.to_bytes()),
-            Specifier::Hex(data) => {
-                define_unumeric!(w, data, flags, width, precision.unwrap_or(0), "x")
-            }
-            Specifier::UpperHex(data) => {
-                define_unumeric!(w, data, flags, width, precision.unwrap_or(0), "X")
-            }
-            Specifier::Octal(data) => {
-                define_unumeric!(w, data, flags, width, precision.unwrap_or(0), "o")
-            }
-            Specifier::Uint(data) => {
-                define_unumeric!(w, data, flags, width, precision.unwrap_or(0))
-            }
-            Specifier::Int(data) => define_numeric!(w, data, flags, width, precision.unwrap_or(0)),
-            Specifier::Double { value, format } => match format {
-                DoubleFormat::Normal
-                | DoubleFormat::UpperNormal
-                | DoubleFormat::Auto
-                | DoubleFormat::UpperAuto
-                | DoubleFormat::Hex
-                | DoubleFormat::UpperHex => {
-                    define_numeric!(w, value, flags, width, precision.unwrap_or(6))
-                }
-                DoubleFormat::Scientific => {
-                    define_numeric!(w, value, flags, width, precision.unwrap_or(6), "e")
-                }
-                DoubleFormat::UpperScientific => {
-                    define_numeric!(w, value, flags, width, precision.unwrap_or(6), "E")
-                }
-            },
-            Specifier::Char(data) => {
-                if flags.contains(Flags::LEFT_ALIGN) {
-                    write!(w, "{:width$}", data as char, width = width as usize)
-                } else {
-                    write!(w, "{:>width$}", data as char, width = width as usize)
-                }
-            }
-            Specifier::Pointer(data) => {
-                if flags.contains(Flags::LEFT_ALIGN) {
-                    write!(w, "{:<width$p}", data, width = width as usize)
-                } else if flags.contains(Flags::PREPEND_ZERO) {
-                    write!(w, "{:0width$p}", data, width = width as usize)
-                } else {
-                    write!(w, "{:width$p}", data, width = width as usize)
-                }
-            }
-            Specifier::WriteBytesWritten(_, _) => Err(Default::default()),
-        };
-        match res {
-            Ok(_) => w.1 as c_int,
-            Err(_) => -1,
-        }
-    }
+pub fn fmt_write<'a>(
+    w: &'a mut impl fmt::Write,
+    locale: &'a Locale,
+) -> impl FnMut(Argument) -> fmt::Result + 'a {
+    move |arg| write_1_arg_locale(arg, locale, &mut FmtWrite(w))
 }
 
 /// Returns an object that implements [`Display`][fmt::Display] for safely
@@ -302,155 +526,33 @@ pub fn fmt_write(w: &mut impl fmt::Write) -> impl FnMut(Argument) -> c_int + '_ 
 /// [`fmt_write`], but may be the only option.
 ///
 /// This shares the same caveats as [`fmt_write`].
-///
-/// # Safety
-///
-/// [`VaList`]s are *very* unsafe. The passed `format` and `args` parameter must be a valid [`printf` format string](http://www.cplusplus.com/reference/cstdio/printf/).
-pub unsafe fn display<'a, 'b>(
-    format: *const c_char,
-    va_list: VaList<'a, 'b>,
-) -> VaListDisplay<'a, 'b> {
-    VaListDisplay {
+pub fn display<'a, 'b, 'c>(
+    format: &'a wstr,
+    locale: &'b Locale,
+    args: ArgList<'c>,
+) -> ArgListDisplay<'a, 'b, 'c> {
+    ArgListDisplay {
         format,
-        va_list,
-        written: Cell::new(0),
+        locale,
+        args,
     }
 }
 
 /// Helper struct created by [`display`] for safely printing `printf`-style
 /// formatting with [`format!`] and `{}`. This can be used with anything that
 /// uses [`format_args!`], such as [`println!`] or the `log` crate.
-///
-/// ```rust
-/// #![feature(c_variadic)]
-///
-/// use core::ffi::{c_char, c_int};
-///
-/// #[no_mangle]
-/// unsafe extern "C" fn c_library_print(str: *const c_char, mut args: ...) -> c_int {
-///     let format = printf_compat::output::display(str, args.as_va_list());
-///     println!("{}", format);
-///     format.bytes_written()
-/// }
-/// ```
-pub struct VaListDisplay<'a, 'b> {
-    format: *const c_char,
-    va_list: VaList<'a, 'b>,
-    written: Cell<c_int>,
+pub struct ArgListDisplay<'a, 'b, 'c> {
+    format: &'a wstr,
+    locale: &'b Locale,
+    args: ArgList<'c>,
 }
 
-impl VaListDisplay<'_, '_> {
-    /// Get the number of bytes written, or 0 if there was an error.
-    pub fn bytes_written(&self) -> c_int {
-        self.written.get()
-    }
-}
-
-impl<'a, 'b> fmt::Display for VaListDisplay<'a, 'b> {
+impl<'a, 'b, 'c> fmt::Display for ArgListDisplay<'a, 'b, 'c> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        unsafe {
-            let bytes = crate::format(self.format, self.va_list.clone().as_va_list(), fmt_write(f));
-            self.written.set(bytes);
-            if bytes < 0 {
-                Err(fmt::Error)
-            } else {
-                Ok(())
-            }
-        }
-    }
-}
-
-#[cfg(feature = "std")]
-mod yes_std {
-    use std::io;
-
-    use super::*;
-
-    struct FmtWriter<T: io::Write>(T, io::Result<()>);
-
-    impl<T: io::Write> fmt::Write for FmtWriter<T> {
-        fn write_str(&mut self, s: &str) -> fmt::Result {
-            match self.0.write_all(s.as_bytes()) {
-                Ok(()) => Ok(()),
-                Err(e) => {
-                    self.1 = Err(e);
-                    Err(fmt::Error)
-                }
-            }
-        }
-    }
-
-    struct IoWriteCounter<'a, T: io::Write>(&'a mut T, usize);
-
-    impl<'a, T: io::Write> io::Write for IoWriteCounter<'a, T> {
-        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-            self.0.write_all(buf)?;
-            self.1 += buf.len();
-            Ok(buf.len())
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            self.0.flush()
-        }
-    }
-
-    fn write_bytes(
-        w: &mut impl io::Write,
-        flags: Flags,
-        width: c_int,
-        precision: Option<c_int>,
-        b: &[u8],
-    ) -> io::Result<()> {
-        let precision = precision.unwrap_or(b.len() as c_int);
-        let b = b.get(..(b.len().min(precision as usize))).unwrap_or(&[]);
-
-        if flags.contains(Flags::LEFT_ALIGN) {
-            w.write_all(b)?;
-            for _ in 0..((width as usize).saturating_sub(b.len())) {
-                w.write_all(b" ")?;
-            }
-            Ok(())
-        } else {
-            for _ in 0..((width as usize).saturating_sub(b.len())) {
-                w.write_all(b" ")?;
-            }
-            w.write_all(b)
-        }
-    }
-
-    /// Write to a struct that implements [`io::Write`].
-    ///
-    /// This shares the same caveats as [`fmt_write`], except that non-UTF-8
-    /// data is supported.
-    pub fn io_write(w: &mut impl io::Write) -> impl FnMut(Argument) -> c_int + '_ {
-        use io::Write;
-        move |Argument {
-                  flags,
-                  width,
-                  precision,
-                  specifier,
-              }| {
-            let mut w = IoWriteCounter(w, 0);
-            let mut w = &mut w;
-            let res = match specifier {
-                Specifier::Percent => w.write_all(b"%"),
-                Specifier::Bytes(data) => write_bytes(w, flags, width, precision, data),
-                Specifier::String(data) => write_bytes(w, flags, width, precision, data.to_bytes()),
-                _ => {
-                    let mut writer = FmtWriter(&mut w, Ok(()));
-                    fmt_write(&mut writer)(Argument {
-                        flags,
-                        width,
-                        precision,
-                        specifier,
-                    });
-                    writer.1
-                }
-            };
-            match res {
-                Ok(_) => w.1 as c_int,
-                Err(_) => -1,
-            }
-        }
+        super::format(
+            self.format,
+            &mut self.args.clone(),
+            fmt_write(f, self.locale),
+        )
     }
 }
