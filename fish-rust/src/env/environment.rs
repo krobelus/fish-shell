@@ -1,3 +1,4 @@
+use crate::char_star_star::OwningCCharStarStar;
 use crate::common::wcs2zstring;
 use crate::env::{
     is_read_only, ElectricVar, EnvMode, EnvVar, EnvVarFlags, Statuses, VarTable,
@@ -6,7 +7,6 @@ use crate::env::{
 use crate::ffi::{self, env_universal_t};
 use crate::flog::FLOG;
 use crate::global_safety::RelaxedAtomicBool;
-use crate::null_terminated_array::OwningNullTerminatedArray;
 use crate::path::path_make_canonical;
 use crate::threads::{is_forked_child, is_main_thread};
 use crate::wchar::{widestrs, wstr, WExt, WString, L};
@@ -451,7 +451,7 @@ struct EnvScopedImpl {
     perproc_data: PerprocData,
 
     // Exported variable array used by execv.
-    export_array: Option<Arc<OwningNullTerminatedArray>>,
+    export_array: Option<Arc<OwningCCharStarStar>>,
 
     // Cached list of export generations corresponding to the above export_array_.
     // If this differs from the current export generations then we need to regenerate the array.
@@ -730,7 +730,7 @@ impl EnvScopedImpl {
     }
 
     /// Return a newly allocated export array.
-    fn create_export_array(&self) -> Arc<OwningNullTerminatedArray> {
+    fn create_export_array(&self) -> Arc<OwningCCharStarStar> {
         FLOG!(env_export, "create_export_array() recalc");
         let mut vals = VarTable::new();
         Self::get_exported(&self.globals, &mut vals);
@@ -765,11 +765,11 @@ impl EnvScopedImpl {
             str.push_utfstr(&val.as_string());
             export_list.push(wcs2zstring(&str));
         }
-        return Arc::new(OwningNullTerminatedArray::new(export_list));
+        return Arc::new(OwningCCharStarStar::new(export_list));
     }
 
     // Exported variable array used by execv.
-    fn export_array(&mut self) -> Arc<OwningNullTerminatedArray> {
+    fn export_array(&mut self) -> Arc<OwningCCharStarStar> {
         assert!(!is_forked_child());
         if self.export_array_needs_regeneration() {
             self.export_array = Some(self.create_export_array());
@@ -1336,7 +1336,7 @@ impl EnvStack {
     }
 
     /// Returns an array containing all exported variables in a format suitable for execv.
-    pub fn export_arr(&self) -> Arc<OwningNullTerminatedArray> {
+    pub fn export_arr(&self) -> Arc<OwningCCharStarStar> {
         self.acquire_impl().base.export_array()
     }
 }

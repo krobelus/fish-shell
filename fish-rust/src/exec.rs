@@ -7,6 +7,7 @@ use crate::builtins::shared::{
     builtin_run, STATUS_CMD_ERROR, STATUS_CMD_OK, STATUS_CMD_UNKNOWN, STATUS_NOT_EXECUTABLE,
     STATUS_READ_TOO_MUCH,
 };
+use crate::char_star_star::{CharStarStar, NullTerminatedSequence, OwningCCharStarStar};
 use crate::common::{
     exit_without_destructors, scoped_push, str2wcstring, wcs2string, wcs2zstring, write_loop,
     Cleanup,
@@ -21,9 +22,6 @@ use crate::io::{
     BufferedOutputStream, FdOutputStream, IoBufferfill, IoChain, IoClose, IoMode, IoPipe,
     IoStreams, NullOutputStream, OutputStream, OutputStreamRef, SeparatedBuffer,
     StringOutputStream,
-};
-use crate::null_terminated_array::{
-    null_terminated_array_length, AsNullTerminatedArray, OwningNullTerminatedArray,
 };
 use crate::parser::{Block, BlockId, BlockType, EvalRes, Parser};
 use crate::postfork::{
@@ -382,12 +380,12 @@ pub fn is_thompson_shell_script(path: &CStr) -> bool {
 fn safe_launch_process(
     p: &mut Process,
     actual_cmd: &CStr,
-    argv: &impl AsNullTerminatedArray<CharType = c_char>,
-    envv: &impl AsNullTerminatedArray<CharType = c_char>,
+    argv: &CharStarStar<c_char>,
+    envv: &CharStarStar<c_char>,
 ) -> ! {
     // This function never returns, so we take certain liberties with constness.
 
-    unsafe { libc::execve(actual_cmd.as_ptr(), argv.get(), envv.get()) };
+    unsafe { libc::execve(actual_cmd.as_ptr(), argv.as_ptr(), envv.as_ptr()) };
     let err = errno();
 
     // The shebang wasn't introduced until UNIX Seventh Edition, so if
@@ -399,8 +397,8 @@ fn safe_launch_process(
         // Construct new argv.
         // We must not allocate memory, so only 128 args are supported.
         const maxargs: usize = 128;
-        let nargs = null_terminated_array_length(argv.get());
-        let argv = unsafe { slice::from_raw_parts(argv.get(), nargs) };
+        let nargs = argv.len_without_terminator();
+        let argv = unsafe { slice::from_raw_parts(argv.as_ptr(), nargs) };
         if nargs <= maxargs {
             // +1 for /bin/sh, +1 for terminating nullptr
             let mut argv2 = [std::ptr::null(); 1 + maxargs + 1];
@@ -411,7 +409,7 @@ fn safe_launch_process(
             // not what we would pass as argv0.
             argv2[1] = actual_cmd.as_ptr();
             unsafe {
-                libc::execve(_PATH_BSHELL.as_ptr(), &argv2[0], envv.get());
+                libc::execve(_PATH_BSHELL.as_ptr(), &argv2[0], envv.as_ptr());
             }
         }
     }
@@ -428,7 +426,7 @@ fn launch_process_nofork(vars: &EnvStack, p: &mut Process) -> ! {
 
     // Construct argv. Ensure the strings stay alive for the duration of this function.
     let narrow_strings = p.argv().iter().map(|s| wcs2zstring(s)).collect();
-    let argv = OwningNullTerminatedArray::new(narrow_strings);
+    let argv = OwningCCharStarStar::new(narrow_strings);
 
     // Construct envp.
     let envp = vars.export_arr();
@@ -437,7 +435,7 @@ fn launch_process_nofork(vars: &EnvStack, p: &mut Process) -> ! {
     // Ensure the terminal modes are what they were before we changed them.
     restore_term_mode();
     // Bounce to launch_process. This never returns.
-    safe_launch_process(p, &actual_cmd, &argv, &*envp);
+    safe_launch_process(p, &actual_cmd, &argv, &envp);
 }
 
 // Returns whether we can use posix spawn for a given process in a given job.
@@ -795,7 +793,7 @@ fn exec_external_command(
     assert!(p.typ == ProcessType::external, "Process is not external");
     // Get argv and envv before we fork.
     let narrow_argv = p.argv().iter().map(|s| wcs2zstring(s)).collect();
-    let argv = OwningNullTerminatedArray::new(narrow_argv);
+    let argv = OwningCCharStarStar::new(narrow_argv);
 
     // Convert our IO chain to a dup2 sequence.
     let dup2s = dup2_list_resolve_chain(proc_io_chain);
@@ -851,7 +849,7 @@ fn exec_external_command(
     }
 
     fork_child_for_process(j, p, &dup2s, L!("external command"), |p| {
-        safe_launch_process(p, &actual_cmd, &argv, &*envv)
+        safe_launch_process(p, &actual_cmd, &argv, &envv)
     })
 }
 
