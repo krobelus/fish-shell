@@ -9,23 +9,16 @@ pub trait Nullable: Copy {
     fn is_null(self) -> bool;
 }
 
-impl<T: ?Sized> Nullable for *const T {
-    fn is_null(self) -> bool {
-        <*const T>::is_null(self)
-    }
-}
-
 impl Nullable for c_char {
     fn is_null(self) -> bool {
         self == 0
     }
 }
-
-// The trait is unsafe because `as_ptr` must guarantee
-// to return a pointer to a sequence terminated with an element
-// for which `Nullable::is_null` is `true`.
-// The pointer must not be null even for empty sequences:
-// empty sequence must consist of the terminator.
+/// # Safety
+/// `as_ptr` must guarantee to return a pointer to a sequence
+/// terminated with an element for which `Nullable::is_null` is `true`.
+/// The pointer must not be null even for empty sequences: it must point to a terminator.
+/// And, finally, sequence size must be strictly less than isize::MAX (not counting the terminator).
 pub unsafe trait NullTerminatedSequence {
     type Item: Nullable;
 
@@ -52,8 +45,8 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         // SAFETY: by construction. We are only constructed in `NullTerminatedSequence::iter()`
-        // with `current_ptr` set to `NullTerminatedSequence::as_ptr()`, which is guaranteed to be
-        // "good" by the unsafety of the `NullTerminatedSequence` trait.
+        // with `current_ptr` set to `NullTerminatedSequence::as_ptr()`,
+        // which is guaranteed to be "good" by the unsafety of the `NullTerminatedSequence` trait.
         // "Good" means not a nullptr and is pointing to a sequence
         // terminated by an element for which `Nullable::is_null` is `true`.
         // And we never increment the pointer past that element.
@@ -77,8 +70,7 @@ unsafe impl NullTerminatedSequence for CStr {
     }
 
     fn len_without_terminator(&self) -> usize {
-        // SAFETY: CStr is NUL-terminated
-        unsafe { strlen(self.as_ptr()) }
+        self.to_bytes().len()
     }
 }
 
@@ -88,8 +80,11 @@ mod cstr_tests {
 
     #[test]
     fn cstr_as_ptr() {
-        let c_str = CString::new("foo").unwrap().as_c_str();
+        let c_string = CString::new("foo").unwrap();
+        let c_str = c_string.as_c_str();
+        assert_eq!(CStr::as_ptr(c_str), NullTerminatedSequence::as_ptr(c_str));
     }
+
     #[test]
     fn cstr_len_without_terminator() {
         assert_eq!(<&CStr as Default>::default().len_without_terminator(), 0);
@@ -101,16 +96,14 @@ mod cstr_tests {
         }
 
         test_from_bytes("I'm a fish!\0".as_bytes(), 11);
-        // This one is actually nasty, because neither Rust's CStr
-        // nor our implementation of NullTerminatedSequence for it
-        // guarantee anything about CStr's with '\0' in the middle.
-        test_from_bytes("O\0ps".as_bytes(), 1);
         test_from_bytes("\0".as_bytes(), 0);
     }
 
     #[test]
     fn cstr_iter() {
-        assert_eq!(<&CStr as Default>::default().len_without_terminator(), 0);
+        assert!(NullTerminatedSequence::iter(<&CStr as Default>::default())
+            .next()
+            .is_none());
 
         fn test_from_bytes(bytes: &[u8], expected: impl AsRef<[u8]>) {
             let c_str = unsafe { CStr::from_bytes_with_nul_unchecked(bytes) };
@@ -121,11 +114,13 @@ mod cstr_tests {
         }
 
         test_from_bytes("I'm a fish!\0".as_bytes(), "I'm a fish!".as_bytes());
-        // This one is actually nasty, because neither Rust's CStr
-        // nor our implementation of NullTerminatedSequence for it
-        // guarantee anything about CStr's with '\0' in the middle.
-        test_from_bytes("O\0ps".as_bytes(), "O".as_bytes());
         test_from_bytes("\0".as_bytes(), []);
+    }
+}
+
+impl<T: ?Sized> Nullable for *const T {
+    fn is_null(self) -> bool {
+        <*const T>::is_null(self)
     }
 }
 
@@ -136,30 +131,9 @@ mod cstr_tests {
 /// subject to the small-string optimization. This means that pointers will be left dangling if any
 /// input string is deallocated *or moved*. This class should only be used in transient calls.
 pub struct CharStarStar<'p, Char> {
+    // Cannot replace `*const Char` with some sort of `CStr`, because the last one must be null
     pointers: Vec<*const Char>,
     _phantom: PhantomData<&'p [&'p [Char]]>,
-}
-
-// SAFETY: we make sure to append nullptr in the new()
-unsafe impl<'p, Char: Nullable> NullTerminatedSequence for CharStarStar<'p, Char> {
-    type Item = *const Char;
-    /// Return the list of pointers, appropriate for envp or argv.
-    /// Note this returns a mutable array of const strings. The caller may rearrange the strings but
-    /// not modify their contents.
-    /// We freely give out mutable pointers even though we are not mut; this is because most of the uses
-    /// expect the array to be mutable even though fish does not mutate it, so it's either this or cast
-    /// away the const at the call site.
-    fn as_ptr(&self) -> *const Self::Item {
-        debug_assert!(
-            self.pointers.last().map(|p| p.is_null()).unwrap_or(false),
-            "Should have null terminator"
-        );
-        self.pointers.as_ptr()
-    }
-
-    fn len_without_terminator(&self) -> usize {
-        self.pointers.len() - 1
-    }
 }
 
 impl<'p, Char: Nullable> CharStarStar<'p, Char> {
@@ -182,6 +156,23 @@ impl<'p, Char: Nullable> CharStarStar<'p, Char> {
             pointers,
             _phantom: PhantomData,
         }
+    }
+}
+
+// SAFETY: we make sure to append nullptr in the new(), the length is bounded by Vec
+unsafe impl<'p, Char: Nullable> NullTerminatedSequence for CharStarStar<'p, Char> {
+    type Item = *const Char;
+    /// Return the list of pointers, appropriate for envp or argv.
+    fn as_ptr(&self) -> *const Self::Item {
+        debug_assert!(
+            self.pointers.last().map(|p| p.is_null()).unwrap_or(false),
+            "Should have null terminator"
+        );
+        self.pointers.as_ptr()
+    }
+
+    fn len_without_terminator(&self) -> usize {
+        self.pointers.len() - 1
     }
 }
 
@@ -211,17 +202,44 @@ mod char_star_star_tests {
     }
 }
 
+pub type C_CharStarStar<'p> = CharStarStar<'p, c_char>;
+
+impl<'p> C_CharStarStar<'p> {
+    #[allow(clippy::needless_lifetimes)]
+    pub fn cstr_iter<'self_ref>(&'self_ref self) -> impl Iterator<Item = &'self_ref CStr> {
+        self.iter().map(|p: *const c_char|
+                // SAFETY:
+                // We are constructed from a `NullTerminatedSequence<Item = c_char>` in new,
+                // so it's okay to treat inner pointers as &CStr.
+                // As for the lifetime, 'p outlives 'self_ref, and the data we are referring to is bounded by 'p,
+                // thus it is okay to bound a ref to the data by 'self_ref.
+                 unsafe { CStr::from_ptr::<'self_ref>(p) })
+    }
+}
+
+#[cfg(test)]
+mod c_char_star_star_tests {
+    use super::{CStr, CString, C_CharStarStar};
+    #[test]
+    fn c_char_star_star_cstr_iter() {
+        let c_strings = &[CString::new("foo").unwrap(), CString::new("bar").unwrap()];
+        let c_strs: Vec<_> = c_strings.iter().map(CString::as_c_str).collect();
+        let c_char_star_star = C_CharStarStar::new(&c_strs);
+        let collected: Vec<_> = c_char_star_star.cstr_iter().collect();
+        assert_eq!(c_strs, collected);
+    }
+}
 /// A container which exposes a null-terminated array of pointers to strings that it owns.
 /// This is useful for persisted null-terminated arrays, e.g. the exported environment variable
 /// list. This assumes u8, since we don't need this for wide chars.
-pub struct OwningCharStarStar {
+pub struct OwningCCharStarStar {
     strings: Pin<Box<[CString]>>,
     // Note that inner holds pointers into our boxed strings.
     // The 'static is a lie.
     inner: CharStarStar<'static, c_char>,
 }
 
-impl OwningCharStarStar {
+impl OwningCCharStarStar {
     /// Construct, taking ownership of a list of strings.
     pub fn new(strings: Vec<CString>) -> Self {
         let strings = strings.into_boxed_slice();
@@ -234,7 +252,7 @@ impl OwningCharStarStar {
     }
 }
 
-impl std::ops::Deref for OwningCharStarStar {
+impl Deref for OwningCCharStarStar {
     type Target = CharStarStar<'static, c_char>;
 
     fn deref(&self) -> &Self::Target {
@@ -244,22 +262,17 @@ impl std::ops::Deref for OwningCharStarStar {
 
 #[cfg(test)]
 mod owning_char_star_star_tests {
-    use super::{CStr, CString, CharStarStar, NullTerminatedSequence, OwningCharStarStar};
+    use super::{CStr, CString, CharStarStar, NullTerminatedSequence, OwningCCharStarStar};
 
     #[test]
     fn owning_char_star_star_ptr() {
         let c_strings = vec![CString::new("foo").unwrap(), CString::new("bar").unwrap()];
-        let arr = OwningCharStarStar::new(c_strings);
+        let arr = OwningCCharStarStar::new(c_strings);
         let ptr = arr.as_ptr();
         unsafe {
             assert_eq!(CStr::from_ptr(*ptr).to_str().unwrap(), "foo");
             assert_eq!(CStr::from_ptr(*ptr.offset(1)).to_str().unwrap(), "bar");
             assert_eq!(*ptr.offset(2), std::ptr::null());
         }
-    }
-
-    #[test]
-    fn owning_char_star_star_iter() {
-        // TODO
     }
 }

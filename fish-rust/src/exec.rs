@@ -7,7 +7,7 @@ use crate::builtins::shared::{
     builtin_run, STATUS_CMD_ERROR, STATUS_CMD_OK, STATUS_CMD_UNKNOWN, STATUS_NOT_EXECUTABLE,
     STATUS_READ_TOO_MUCH,
 };
-use crate::char_star_star::{CharStarStar, NullTerminatedSequence, OwningCharStarStar};
+use crate::char_star_star::{CharStarStar, NullTerminatedSequence, OwningCCharStarStar};
 use crate::common::{
     exit_without_destructors, scoped_push, str2wcstring, wcs2string, wcs2zstring, write_loop,
     Cleanup,
@@ -426,7 +426,7 @@ fn launch_process_nofork(vars: &EnvStack, p: &mut Process) -> ! {
 
     // Construct argv. Ensure the strings stay alive for the duration of this function.
     let narrow_strings = p.argv().iter().map(|s| wcs2zstring(s)).collect();
-    let argv = OwningCharStarStar::new(narrow_strings);
+    let argv = OwningCCharStarStar::new(narrow_strings);
 
     // Construct envp.
     let envp = vars.export_arr();
@@ -435,7 +435,7 @@ fn launch_process_nofork(vars: &EnvStack, p: &mut Process) -> ! {
     // Ensure the terminal modes are what they were before we changed them.
     restore_term_mode();
     // Bounce to launch_process. This never returns.
-    safe_launch_process(p, &actual_cmd, &argv, &*envp);
+    safe_launch_process(p, &actual_cmd, &argv, &envp);
 }
 
 // Returns whether we can use posix spawn for a given process in a given job.
@@ -793,7 +793,7 @@ fn exec_external_command(
     assert!(p.typ == ProcessType::external, "Process is not external");
     // Get argv and envv before we fork.
     let narrow_argv = p.argv().iter().map(|s| wcs2zstring(s)).collect();
-    let argv = OwningCharStarStar::new(narrow_argv);
+    let argv = OwningCCharStarStar::new(narrow_argv);
 
     // Convert our IO chain to a dup2 sequence.
     let dup2s = dup2_list_resolve_chain(proc_io_chain);
@@ -849,7 +849,7 @@ fn exec_external_command(
     }
 
     fork_child_for_process(j, p, &dup2s, L!("external command"), |p| {
-        safe_launch_process(p, &actual_cmd, &argv, &*envv)
+        safe_launch_process(p, &actual_cmd, &argv, &envv)
     })
 }
 

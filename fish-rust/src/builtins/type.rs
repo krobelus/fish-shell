@@ -100,11 +100,7 @@ pub fn r#type(
                     return STATUS_CMD_OK;
                 }
                 if !opts.get_type {
-                    let path: &WString = props
-                        .definition_file
-                        .as_ref()
-                        .map(|p| &**p)
-                        .unwrap_or(&EMPTY_STRING);
+                    let path: &WString = props.definition_file.as_deref().unwrap_or(&EMPTY_STRING);
                     let mut comment = WString::new();
 
                     if path.is_empty() {
