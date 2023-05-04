@@ -5,10 +5,10 @@ use crate::common::{
 use crate::compat::_PATH_BSHELL;
 // Functions that we may safely call after fork(), of which there are very few. In particular we
 // cannot allocate memory, since we're insane enough to call fork from a multithreaded process.
+use crate::char_star_star::{CharStarStar, NullTerminatedSequence};
 use crate::exec::{blocked_signals_for_job, is_thompson_shell_script};
 use crate::fds::set_cloexec;
 use crate::flog::FLOGF_SAFE;
-use crate::null_terminated_array::AsNullTerminatedArray;
 use crate::proc::{Job, Process};
 use crate::redirection::Dup2List;
 use crate::signal::{self, signal_reset_handlers};
@@ -318,8 +318,8 @@ pub fn execute_fork() -> pid_t {
 pub fn safe_report_exec_error(
     err: Errno,
     actual_cmd: &CStr,
-    argv: &impl AsNullTerminatedArray<CharType = c_char>,
-    envv: &impl AsNullTerminatedArray<CharType = c_char>,
+    argv: &CharStarStar<c_char>,
+    envv: &CharStarStar<c_char>,
 ) {
     match err.0 {
         E2BIG => {
@@ -685,8 +685,8 @@ impl PosixSpawner {
     pub fn spawn(
         &mut self,
         cmd: &CStr,
-        argv: &impl AsNullTerminatedArray<CharType = c_char>,
-        envp: &impl AsNullTerminatedArray<CharType = c_char>,
+        argv: &impl NullTerminatedSequence<Item = c_char>,
+        envp: &impl NullTerminatedSequence<Item = c_char>,
     ) -> Option<pid_t> {
         if self.get_error() != 0 {
             return None;
