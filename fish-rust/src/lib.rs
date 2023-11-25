@@ -85,6 +85,7 @@ mod proc;
 mod re;
 mod reader;
 mod redirection;
+mod screen;
 mod signal;
 mod smoke;
 mod termsize;
