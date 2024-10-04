@@ -1,5 +1,7 @@
 //! stdlib backports
 
+pub mod sort;
+
 pub trait IsSomeAnd {
     type Type;
     #[allow(clippy::wrong_self_convention)]

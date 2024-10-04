@@ -473,7 +473,6 @@ fn resolve_auto_space(comp: &wstr, mut flags: CompleteFlags) -> CompleteFlags {
 
 // If these functions aren't force inlined, it is actually faster to call
 // stable_sort twice rather than to iterate once performing all comparisons in one go!
-
 #[inline(always)]
 fn natural_compare_completions(a: &Completion, b: &Completion) -> Ordering {
     if (a.flags & b.flags).contains(CompleteFlags::DONT_SORT) {
@@ -534,7 +533,7 @@ pub fn sort_and_prioritize(comps: &mut Vec<Completion>, flags: CompletionRequest
 
     // Sort, provided DONT_SORT isn't set.
     // Here we do not pass suppress_exact, so that exact matches appear first.
-    comps.sort_by(natural_compare_completions);
+    comps.sort_by_strict_weak_order(natural_compare_completions);
 
     // Lastly, if this is for an autosuggestion, prefer to avoid completions that duplicate
     // arguments, and penalize files that end in tilde - they're frequently autosave files from e.g.
