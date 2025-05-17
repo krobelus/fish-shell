@@ -25,11 +25,9 @@ use libc::{
 use nix::fcntl::OFlag;
 use nix::sys::stat::Mode;
 use once_cell::sync::Lazy;
-use once_cell::unsync::OnceCell;
 #[cfg(not(target_has_atomic = "64"))]
 use portable_atomic::AtomicU64;
 use std::borrow::Cow;
-use std::cell::RefCell;
 use std::cell::RefMut;
 use std::cell::UnsafeCell;
 use std::cmp;
@@ -40,6 +38,7 @@ use std::ops::ControlFlow;
 use std::ops::Range;
 use std::os::fd::BorrowedFd;
 use std::os::fd::{AsRawFd, RawFd};
+use std::os::unix::ffi::OsStrExt;
 use std::pin::Pin;
 use std::rc::Rc;
 #[cfg(target_has_atomic = "64")]
@@ -85,7 +84,8 @@ use crate::history::{
     history_session_id, in_private_mode, History, HistorySearch, PersistenceMode, SearchDirection,
     SearchFlags, SearchType,
 };
-use crate::input::init_input;
+use crate::input_common::InputEventQueue;
+use crate::input_common::InputEventQueuer;
 use crate::input_common::QueryResponse;
 use crate::input_common::{
     stop_query, CharEvent, CharInputStyle, CursorPositionQuery, ImplicitEvent, InputData,
@@ -259,28 +259,59 @@ fn redirect_tty_after_sighup() {
     }
 }
 
-pub(crate) fn initial_query(
-    blocking_query: &OnceCell<RefCell<Option<TerminalQuery>>>,
-    out: &mut impl Output,
-    vars: Option<&dyn Environment>,
-) {
-    blocking_query.get_or_init(|| {
-        initialize_tty_metadata();
-        let query =
-            if is_dumb() || std::env::var_os("MC_TMPDIR").is_some() || !isatty(STDOUT_FILENO) {
-                None
-            } else {
-                // Query for kitty keyboard protocol support.
-                out.write_command(QueryKittyKeyboardProgressiveEnhancements);
-                out.write_command(QueryXtversion);
-                if let Some(vars) = vars {
-                    query_capabilities_via_dcs(out.by_ref(), vars);
+pub fn initial_query() -> InputEventQueue {
+    reader_interactive_init();
+
+    let mut input_queue = InputEventQueue::new(STDIN_FILENO);
+
+    if !isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO) {
+        return input_queue;
+    };
+
+    if !is_dumb() && std::env::var_os("MC_TMPDIR").is_none() {
+        set_shell_modes(STDIN_FILENO, "initial query");
+        let mut out = BufferedOutputter::new(Outputter::stdoutput());
+        // Query for kitty keyboard protocol support.
+        out.write_command(QueryKittyKeyboardProgressiveEnhancements);
+        out.write_command(QueryXtversion);
+        query_capabilities_via_dcs(out.by_ref());
+        out.write_command(QueryPrimaryDeviceAttribute);
+        input_queue
+            .blocking_query()
+            .replace(TerminalQuery::PrimaryDeviceAttribute);
+        loop {
+            use CharEvent::{Command, Implicit, Key, Readline};
+            use ImplicitEvent::{CheckExit, Eof};
+            use QueryResult::*;
+            match input_queue.readch() {
+                Implicit(Eof) => reader_sighup(),
+                Implicit(CheckExit) => break, // Query canceled with ctrl-c
+                CharEvent::QueryResult(
+                    Response(QueryResponse::PrimaryDeviceAttribute) | Timeout,
+                ) => {
+                    if get_kitty_keyboard_capability() == Capability::Unknown {
+                        set_kitty_keyboard_capability(|| {}, Capability::NotSupported);
+                    }
+                    break;
                 }
-                out.write_command(QueryPrimaryDeviceAttribute);
-                Some(TerminalQuery::PrimaryDeviceAttribute)
+                CharEvent::QueryResult(_) => continue,
+                Key(_) | Readline(_) | Command(_) | Implicit(_) => panic!(),
             };
-        RefCell::new(query)
-    });
+        }
+    };
+
+    let input_data = input_queue.get_input_data();
+    // We blocked execution of code and mappings so input function args must be empty.
+    assert!(input_data.input_function_args.is_empty());
+    FLOGF!(
+        reader,
+        "Adding %lu pending input events",
+        input_data.queue.len()
+    );
+
+    initialize_tty_metadata();
+
+    input_queue
 }
 
 /// The stack of current interactive reading contexts.
@@ -321,7 +352,12 @@ pub fn reader_push<'a>(parser: &'a Parser, history_name: &wstr, conf: ReaderConf
     let data = current_data().unwrap();
     data.command_line_changed(EditableLineTag::Commandline, AutosuggestionUpdate::Remove);
     if !parser.interactive_initialized.swap(true) {
-        reader_interactive_init(parser);
+        // Provide value for `status current-command`
+        parser.libdata_mut().status_vars.command = L!("fish").to_owned();
+        // Also provide a value for the deprecated fish 2.0 $_ variable
+        parser
+            .vars()
+            .set_one(L!("_"), EnvMode::GLOBAL, L!("fish").to_owned());
     }
     Reader { data, parser }
 }
@@ -667,13 +703,17 @@ impl<'a> Reader<'a> {
     }
 }
 
+pub fn reader_stdin_is_a_tty(fd: RawFd) -> bool {
+    (fd == STDIN_FILENO) && isatty(STDIN_FILENO)
+}
+
 /// Read commands from \c fd until encountering EOF.
 /// The fd is not closed.
 pub fn reader_read(parser: &Parser, fd: RawFd, io: &IoChain) -> Result<(), ErrorCode> {
     // If reader_read is called recursively through the '.' builtin, we need to preserve
     // is_interactive. This, and signal handler setup is handled by
     // proc_push_interactive/proc_pop_interactive.
-    let interactive = (fd == STDIN_FILENO) && isatty(STDIN_FILENO);
+    let interactive = reader_stdin_is_a_tty(fd);
 
     let _interactive_push = parser.push_scope(|s| s.is_interactive = interactive);
     signal_set_handlers_once(interactive);
@@ -2218,12 +2258,6 @@ impl<'a> Reader<'a> {
         // Set the new modes.
         set_shell_modes(self.conf.inputfd, "readline");
 
-        initial_query(
-            &self.parser.blocking_query,
-            &mut BufferedOutputter::new(Outputter::stdoutput()),
-            Some(self.parser.vars()),
-        );
-
         // HACK: Don't abandon line for the first prompt, because
         // if we're started with the terminal it might not have settled,
         // so the width is quite likely to be in flight.
@@ -2247,6 +2281,7 @@ impl<'a> Reader<'a> {
         // Start out as initially dirty.
         self.force_exec_prompt_and_repaint = true;
 
+        self.insert_front(self.parser.pending_input.take());
         while !self.rls().finished && !check_exit_loop_maybe_warning(Some(self)) {
             // Enable tty protocols while we read input.
             tty.enable_tty_protocols();
@@ -2554,18 +2589,6 @@ impl<'a> Reader<'a> {
                 use QueryResult::*;
                 let query = match (&**query, query_result) {
                     (
-                        Some(TerminalQuery::PrimaryDeviceAttribute),
-                        Response(PrimaryDeviceAttribute) | Timeout,
-                    ) => {
-                        if get_kitty_keyboard_capability() == Capability::Unknown {
-                            set_kitty_keyboard_capability(
-                                reader_save_screen_state,
-                                Capability::NotSupported,
-                            );
-                        }
-                        maybe_query
-                    }
-                    (
                         Some(TerminalQuery::CursorPosition(cursor_pos_query)),
                         query_result @ (Response(CursorPosition(_)) | Timeout),
                     ) => {
@@ -2615,13 +2638,15 @@ fn send_xtgettcap_query(out: &mut impl Output, cap: &'static str) {
 
 #[allow(renamed_and_removed_lints)]
 #[allow(clippy::blocks_in_if_conditions)] // for old clippy
-fn query_capabilities_via_dcs(out: &mut impl Output, vars: &dyn Environment) {
-    if vars.get_unless_empty(L!("STY")).is_some()
-        || vars.get_unless_empty(L!("TERM")).is_some_and(|term| {
-            let term = &term.as_list()[0];
-            term == "screen" || term == "screen-256color"
-        })
-    {
+fn query_capabilities_via_dcs(out: &mut impl Output) {
+    if {
+        use std::env::var_os;
+        var_os("STY").is_some()
+            || var_os("TERM").is_some_and(|term| {
+                let screens: [&[u8]; 2] = [b"screen", b"screen-256color"];
+                screens.contains(&term.as_bytes())
+            })
+    } {
         return;
     }
     out.write_command(DecsetAlternateScreenBuffer); // enable alternative screen buffer
@@ -4475,14 +4500,11 @@ fn acquire_tty_or_exit(shell_pgid: libc::pid_t) {
 }
 
 /// Initialize data for interactive use.
-fn reader_interactive_init(parser: &Parser) {
+fn reader_interactive_init() {
     assert_is_main_thread();
 
     let mut shell_pgid = getpgrp();
     let shell_pid = getpid();
-
-    // Set up key bindings.
-    init_input();
 
     // Ensure interactive signal handling is enabled.
     signal_set_handlers_once(true);
@@ -4521,15 +4543,6 @@ fn reader_interactive_init(parser: &Parser) {
     }
 
     termsize_invalidate_tty();
-
-    // Provide value for `status current-command`
-    parser.libdata_mut().status_vars.command = L!("fish").to_owned();
-    // Also provide a value for the deprecated fish 2.0 $_ variable
-    parser
-        .vars()
-        .set_one(L!("_"), EnvMode::GLOBAL, L!("fish").to_owned());
-
-    initialize_tty_metadata();
 }
 
 /// Return whether fish is currently unwinding the stack in preparation to exit.

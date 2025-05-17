@@ -945,6 +945,7 @@ pub trait InputEventQueuer {
                             let ok = stop_query(self.blocking_query());
                             assert!(ok);
                             self.get_input_data_mut().queue.clear();
+                            self.push_front(CharEvent::from_check_exit());
                         }
                         continue;
                     }
@@ -1266,6 +1267,7 @@ pub trait InputEventQueuer {
                 _ => return None,
             },
             b'c' if private_mode == Some(b'?') => {
+                FLOG!(reader, "Received primary device attribute response");
                 self.push_front(CharEvent::QueryResult(QueryResult::Response(
                     QueryResponse::PrimaryDeviceAttribute,
                 )));
@@ -1648,6 +1650,7 @@ pub trait InputEventQueuer {
                     "Received interrupt, giving up on waiting for terminal response"
                 );
                 self.get_input_data_mut().queue.clear();
+                self.push_front(CharEvent::from_check_exit());
             } else {
                 self.push_front(interrupt_evt);
             }
@@ -1777,7 +1780,7 @@ impl<'a> FloggableDisplay for DisplayBytes<'a> {}
 /// A simple, concrete implementation of InputEventQueuer.
 pub struct InputEventQueue {
     data: InputData,
-    blocking_query: RefCell<Option<TerminalQuery>>,
+    pub blocking_query: RefCell<Option<TerminalQuery>>,
 }
 
 impl InputEventQueue {
