@@ -48,8 +48,8 @@ function(CREATE_TARGET target)
     COMMAND
       "${CMAKE_COMMAND}" -E
         env ${VARS_FOR_CARGO}
-          ${Rust_CARGO}
-            build --bin ${target}
+          ${Rust_CARGO} +nightly-x86_64-pc-windows-gnu
+            build  -Z build-std --bin ${target}
             $<$<CONFIG:Release>:--release>
             $<$<CONFIG:RelWithDebInfo>:--profile=release-with-debug>
             --target ${Rust_CARGO_TARGET}

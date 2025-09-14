@@ -10,166 +10,43 @@ permissions:
   contents: read
 
 jobs:
-  ubuntu:
-
-    runs-on: ubuntu-latest
-
+  windows:
+    runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v4
-    - uses: ./.github/actions/rust-toolchain@oldest-supported
-    - name: Install deps
-      run: |
-        sudo apt install gettext libpcre2-dev python3-pexpect python3-sphinx tmux
-        # Generate a locale that uses a comma as decimal separator.
-        sudo locale-gen fr_FR.UTF-8
-    - name: cmake
-      run: |
-        mkdir build && cd build
-        cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo
-    - name: make
-      run: |
-        make -C build VERBOSE=1
-    - name: make fish_run_tests
-      run: |
-        make -C build VERBOSE=1 fish_run_tests
-    - name: translation updates
-      run: |
-        # Generate PO files. This should not result it a change in the repo if all translations are
-        # up to date.
-        # Ensure that fish is available as an executable.
-        PATH="$PWD/build:$PATH" build_tools/update_translations.fish --no-mo
-        # Show diff output. Fail if there is any.
-        git --no-pager diff --exit-code || { echo 'There are uncommitted changes after regenerating the gettext PO files. Make sure to update them via `build_tools/update_translations.fish --no-mo` after changing source files.'; exit 1; }
-
-  ubuntu-32bit-static-pcre2:
-
-    runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v4
-    - uses: ./.github/actions/rust-toolchain@oldest-supported
-      with:
-        targets: "i586-unknown-linux-gnu" # rust-toolchain wants this comma-separated
-    - name: Install deps
-      run: |
-        sudo apt update
-        sudo apt install gettext python3-pexpect g++-multilib tmux
-    - name: cmake
-      env:
-          CFLAGS: "-m32"
-      run: |
-        mkdir build && cd build
-        cmake -DFISH_USE_SYSTEM_PCRE2=OFF -DRust_CARGO_TARGET=i586-unknown-linux-gnu ..
-    - name: make
-      run: |
-        make -C build VERBOSE=1
-    - name: make fish_run_tests
-      run: |
-        make -C build VERBOSE=1 fish_run_tests
-
-  ubuntu-asan:
-
-    runs-on: ubuntu-latest
-    env:
-        # Rust has two different memory sanitizers of interest; they can't be used at the same time:
-        # * AddressSanitizer detects out-of-bound access, use-after-free, use-after-return,
-        #   use-after-scope, double-free, invalid-free, and memory leaks.
-        # * MemorySanitizer detects uninitialized reads.
-        #
-        RUSTFLAGS: "-Zsanitizer=address"
-        # RUSTFLAGS: "-Zsanitizer=memory -Zsanitizer-memory-track-origins"
-
-    steps:
-    - uses: actions/checkout@v4
-    # All -Z options require running nightly
-    - uses: dtolnay/rust-toolchain@nightly
-      with:
-        # ASAN uses `cargo build -Zbuild-std` which requires the rust-src component
-        # this is comma-separated
-        components: rust-src
-    - name: Install deps
-      run: |
-        sudo apt install gettext libpcre2-dev python3-pexpect tmux
-        sudo apt install llvm # for llvm-symbolizer
-    - name: cmake
-      env:
-          CC: clang
-      run: |
-        mkdir build && cd build
-        # Rust's ASAN requires the build system to explicitly pass a --target triple. We read that
-        # value from CMake variable Rust_CARGO_TARGET.
-        cmake .. -DASAN=1 -DRust_CARGO_TARGET=x86_64-unknown-linux-gnu -DCMAKE_BUILD_TYPE=Debug
-    - name: make
-      run: |
-        make -C build VERBOSE=1
-    - name: make fish_run_tests
-      env:
-          FISH_CI_SAN: 1
-          ASAN_OPTIONS: check_initialization_order=1:detect_stack_use_after_return=1:detect_leaks=1:fast_unwind_on_malloc=0
-          # use_tls=0 is a workaround for LSAN crashing with "Tracer caught signal 11" (SIGSEGV),
-          # which seems to be an issue with TLS support in newer glibc versions under virtualized
-          # environments. Follow https://github.com/google/sanitizers/issues/1342 and
-          # https://github.com/google/sanitizers/issues/1409 to track this issue.
-          # UPDATE: this can cause spurious leak reports for __cxa_thread_atexit_impl() under glibc.
-          LSAN_OPTIONS: verbosity=0:log_threads=0:use_tls=1:print_suppressions=0
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    # # TODO not sure if these are needed
+    # - name: Install Cygwin
+    #   run: |
+    #     set -x
+    #     choco install cygwin --yes
+    #     choco install cyg-get --yes
+    # - name: Install required Cygwin packages
+    #   run: |
+    #     cyg-get make gcc-core git curl
+    - name: Build project (Rust inside Cygwin)
+      shell: C:\cygwin64\bin\bash.exe -l {0}
       run: |
         set -x
-        export ASAN_SYMBOLIZER_PATH=$(command -v /usr/bin/llvm-symbolizer* | sort -n | head -1)
-        export LSAN_OPTIONS="$LSAN_OPTIONS:suppressions=$PWD/build_tools/lsan_suppressions.txt"
-        make -C build VERBOSE=1 fish_run_tests
-
-  # Our clang++ tsan builds are not recognizing safe rust patterns (such as the fact that Drop
-  # cannot be called while a thread is using the object in question). Rust has its own way of
-  # running TSAN, but for the duration of the port from C++ to Rust, we'll keep this disabled.
-
-  # ubuntu-threadsan:
-  #
-  #   runs-on: ubuntu-latest
-  #
-  #   steps:
-  #   - uses: actions/checkout@v4
-  #   - uses: ./.github/actions/rust-toolchain@oldest-supported
-  #   - name: Install deps
-  #     run: |
-  #       sudo apt install gettext libpcre2-dev python3-pexpect tmux
-  #   - name: cmake
-  #     env:
-  #         FISH_CI_SAN: 1
-  #         CC: clang
-  #     run: |
-  #       mkdir build && cd build
-  #       cmake ..
-  #   - name: make
-  #     run: |
-  #       make
-  #   - name: make fish_run_tests
-  #     run: |
-  #       make -C build fish_run_tests
-
-  macos:
-
-    runs-on: macos-latest
-
-    env:
-      # macOS runners keep having issues loading Cargo.toml dependencies from git (GitHub) instead
-      # of crates.io, so give this a try. It's also sometimes significantly faster on all platforms.
-      CARGO_NET_GIT_FETCH_WITH_CLI: true
-    steps:
-    - uses: actions/checkout@v4
-    - uses: ./.github/actions/rust-toolchain@oldest-supported
-    - name: Install deps
-      run: |
-        # --break-system-packages because homebrew has now declared itself "externally managed".
-        # this is CI so we don't actually care.
-        sudo pip3 install --break-system-packages pexpect
-        brew install tmux
-    - name: cmake
-      run: |
-        mkdir build && cd build
-        cmake -DWITH_GETTEXT=NO -DCMAKE_BUILD_TYPE=Debug ..
-    - name: make
-      run: |
-        make -C build VERBOSE=1
-    - name: make fish_run_tests
-      run: |
-        make -C build VERBOSE=1 fish_run_tests
+        # source ~/.cargo/env
+        # cargo build --verbose
+        pacman -S gcc mingw-w64-x86_64-rustup
+        git fetch --unshallow
+        git checkout d8e5821
+        rustup component add rust-src --toolchain nightly-x86_64-pc-windows-gnu
+        # cargo +nightly-x86_64-pc-windows-gnu build -Z build-std --target x86_64-pc-cygwin --bin fish
+        cargo +nightly-x86_64-pc-windows-gnu install -Z build-std --target x86_64-pc-cygwin --path . --bin fish --debug
+        fish -c 'ls >/dev/null'
+        # target/debug/fish -c 'ls >/dev/null'
+        # target/x86_64-pc-cygwin/debug/fish.exe -c 'ls >/dev/null'
+        for f in $(seq 100)
+        do
+          echo $f
+          if target/debug/fish -c 'ls >/dev/null' 2>&1 | grep select
+          then
+            break
+          fi
+        done
+    - name: Setup tmate session
+      if: ${{ failure() }}
+      uses: mxschmitt/action-tmate@v3

@@ -58,17 +58,17 @@ pub fn init() {
         .set(thread_id())
         .expect("threads::init() must only be called once (at startup)!");
 
-    extern "C" fn child_post_fork() {
-        IS_FORKED_PROC.store(true, Ordering::Relaxed);
-    }
-    unsafe {
-        let result = libc::pthread_atfork(None, None, Some(child_post_fork));
-        assert_eq!(result, 0, "pthread_atfork() failure: {}", errno::errno());
-    }
+    // extern "C" fn child_post_fork() {
+    //     IS_FORKED_PROC.store(true, Ordering::Relaxed);
+    // }
+    // unsafe {
+    //     let result = libc::pthread_atfork(None, None, Some(child_post_fork));
+    //     assert_eq!(result, 0, "pthread_atfork() failure: {}", errno::errno());
+    // }
 
-    IO_THREAD_POOL
-        .set(Mutex::new(ThreadPool::new(1, IO_MAX_THREADS)))
-        .expect("IO_THREAD_POOL has already been initialized!");
+    // IO_THREAD_POOL
+    //     .set(Mutex::new(ThreadPool::new(1, IO_MAX_THREADS)))
+    //     .expect("IO_THREAD_POOL has already been initialized!");
 }
 
 #[inline(always)]
@@ -479,6 +479,7 @@ fn borrow_io_thread_pool() -> std::sync::MutexGuard<'static, ThreadPool> {
 
 /// Enqueues work on the IO thread pool singleton.
 pub fn iothread_perform(f: impl FnOnce() + 'static + Send) {
+    panic!();
     let mut thread_pool = borrow_io_thread_pool();
     thread_pool.perform(f, false);
 }
@@ -488,6 +489,7 @@ pub fn iothread_perform(f: impl FnOnce() + 'static + Send) {
 /// It does its best to spawn a thread if all other threads are occupied. This is primarily for
 /// cases where deferring creation of a new thread might lead to a deadlock.
 pub fn iothread_perform_cant_wait(f: impl FnOnce() + 'static + Send) {
+    panic!();
     let mut thread_pool = borrow_io_thread_pool();
     thread_pool.perform(f, true);
 }
@@ -522,6 +524,7 @@ pub fn iothread_service_main(ctx: &mut Reader) {
 /// Does nasty polling via select(), only used for testing.
 #[cfg(test)]
 pub(crate) fn iothread_drain_all(ctx: &mut Reader) {
+    panic!();
     while borrow_io_thread_pool()
         .shared
         .mutex

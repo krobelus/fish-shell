@@ -389,11 +389,11 @@ impl IoData for IoBufferfill {
 
 /// Type wrapping a lock-protected separated buffer.
 #[derive(Clone)]
-pub struct IoBuffer(Arc<Mutex<SeparatedBuffer>>);
+pub struct IoBuffer(pub Arc<Mutex<SeparatedBuffer>>);
 
 impl IoBuffer {
     /// Create a new IoBuffer.
-    fn new(buffer_limit: usize) -> Self {
+    pub fn new(buffer_limit: usize) -> Self {
         IoBuffer(Arc::new(Mutex::new(SeparatedBuffer::new(buffer_limit))))
     }
 

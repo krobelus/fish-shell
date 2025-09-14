@@ -3,8 +3,8 @@
 use crate::ast::{self, Node};
 use crate::builtins::shared::STATUS_ILLEGAL_CMD;
 use crate::common::{
-    escape_string, wcs2string, CancelChecker, EscapeFlags, EscapeStringStyle, FilenameRef,
-    ScopeGuarding, ScopedCell, ScopedRefCell, PROFILING_ACTIVE,
+    escape_string, wcs2string, EscapeFlags, EscapeStringStyle, FilenameRef, ScopeGuarding,
+    ScopedCell, ScopedRefCell, PROFILING_ACTIVE,
 };
 use crate::complete::CompletionList;
 use crate::env::{EnvMode, EnvStack, EnvStackSetResult, Environment, Statuses};
@@ -22,11 +22,10 @@ use crate::parse_constants::{
     ParseError, ParseErrorList, ParseTreeFlags, FISH_MAX_EVAL_DEPTH, FISH_MAX_STACK_DEPTH,
     SOURCE_LOCATION_UNKNOWN,
 };
-use crate::parse_execution::{EndExecutionReason, ExecutionContext};
 use crate::parse_tree::NodeRef;
 use crate::parse_tree::{parse_source, LineCounter, ParsedSourceRef};
-use crate::proc::{job_reap, JobGroupRef, JobList, JobRef, Pid, ProcStatus};
-use crate::signal::{signal_check_cancel, signal_clear_cancel, Signal};
+use crate::proc::{JobGroupRef, JobList, JobRef, Pid, ProcStatus};
+use crate::signal::{signal_check_cancel, Signal};
 use crate::util::get_time;
 use crate::wait_handle::WaitHandleStore;
 use crate::wchar::prelude::*;
@@ -542,6 +541,20 @@ impl Parser {
         }
     }
 
+    pub fn eval_tmp(&self, cmd: &wstr) -> EvalRes {
+        // Parse the source into a tree, if we can.
+        let mut error_list = ParseErrorList::new();
+        if let Some(ps) = parse_source(
+            cmd.to_owned(),
+            ParseTreeFlags::empty(),
+            Some(&mut error_list),
+        ) {
+            return self.eval_parsed_source_tmp(&ps);
+        }
+        assert!(!false);
+        panic!();
+    }
+
     /// Evaluate the parsed source ps.
     /// Because the source has been parsed, a syntax error is impossible.
     pub fn eval_parsed_source(
@@ -557,6 +570,7 @@ impl Parser {
             // Execute the top job list.
             self.eval_node(&job_list, io, job_group, block_type)
         } else {
+            assert!(false);
             let status = ProcStatus::from_exit_code(self.get_last_status());
             EvalRes {
                 status,
@@ -565,6 +579,12 @@ impl Parser {
                 no_status: true,
             }
         }
+    }
+
+    pub fn eval_parsed_source_tmp(&self, ps: &ParsedSourceRef) -> EvalRes {
+        let job_list = ps.top_job_list();
+        assert!(!job_list.is_empty());
+        self.eval_node_tmp(&job_list)
     }
 
     pub fn eval_wstr(
@@ -613,6 +633,10 @@ impl Parser {
         ret
     }
 
+    pub fn eval_node_tmp<T: Node>(&self, node: &NodeRef<T>) -> EvalRes {
+        EvalRes::new(ProcStatus::from_signal(Signal::new(1)))
+    }
+
     /// Evaluates a node.
     /// The node type must be ast::Statement or ast::JobList.
     pub fn eval_node<T: Node>(
@@ -622,90 +646,92 @@ impl Parser {
         job_group: Option<&JobGroupRef>,
         block_type: BlockType,
     ) -> EvalRes {
-        // Only certain blocks are allowed.
-        assert!(
-            matches!(block_type, BlockType::top | BlockType::subst),
-            "Invalid block type"
-        );
+        // // Only certain blocks are allowed.
+        // assert!(
+        //     matches!(block_type, BlockType::top | BlockType::subst),
+        //     "Invalid block type"
+        // );
 
-        // If fish itself got a cancel signal, then we want to unwind back to the parser which
-        // has a Clear cancellation behavior.
-        // Note this only happens in interactive sessions. In non-interactive sessions, SIGINT will
-        // cause fish to exit.
-        let sig = signal_check_cancel();
-        if sig != 0 {
-            if self.cancel_behavior == CancelBehavior::Clear && self.block_list.borrow().is_empty()
-            {
-                signal_clear_cancel();
-            } else {
-                return EvalRes::new(ProcStatus::from_signal(Signal::new(sig)));
-            }
-        }
+        // // If fish itself got a cancel signal, then we want to unwind back to the parser which
+        // // has a Clear cancellation behavior.
+        // // Note this only happens in interactive sessions. In non-interactive sessions, SIGINT will
+        // // cause fish to exit.
+        // let sig = signal_check_cancel();
+        // if sig != 0 {
+        //     if self.cancel_behavior == CancelBehavior::Clear && self.block_list.borrow().is_empty()
+        //     {
+        //         signal_clear_cancel();
+        //     } else {
+        //         return EvalRes::new(ProcStatus::from_signal(Signal::new(sig)));
+        //     }
+        // }
 
-        // A helper to detect if we got a signal.
-        // This includes both signals sent to fish (user hit control-C while fish is foreground) and
-        // signals from the job group (e.g. some external job terminated with SIGQUIT).
-        let jg = job_group.cloned();
-        let check_cancel_signal = move || {
-            // Did fish itself get a signal?
-            let sig = signal_check_cancel();
-            if sig != 0 {
-                return Some(Signal::new(sig));
-            }
-            // Has this job group been cancelled?
-            jg.as_ref().and_then(|jg| jg.get_cancel_signal())
-        };
+        // // A helper to detect if we got a signal.
+        // // This includes both signals sent to fish (user hit control-C while fish is foreground) and
+        // // signals from the job group (e.g. some external job terminated with SIGQUIT).
+        // let jg = job_group.cloned();
+        // let check_cancel_signal = move || {
+        //     // Did fish itself get a signal?
+        //     let sig = signal_check_cancel();
+        //     if sig != 0 {
+        //         return Some(Signal::new(sig));
+        //     }
+        //     // Has this job group been cancelled?
+        //     jg.as_ref().and_then(|jg| jg.get_cancel_signal())
+        // };
 
-        // If we have a job group which is cancelled, then do nothing.
-        if let Some(sig) = check_cancel_signal() {
-            return EvalRes::new(ProcStatus::from_signal(sig));
-        }
+        // // If we have a job group which is cancelled, then do nothing.
+        // if let Some(sig) = check_cancel_signal() {
+        //     return EvalRes::new(ProcStatus::from_signal(sig));
+        // }
 
-        job_reap(self, false); // not sure why we reap jobs here
+        // job_reap(self, false); // not sure why we reap jobs here
 
-        // Start it up
-        let mut op_ctx = self.context();
-        let scope_block = self.push_block(Block::scope_block(block_type));
+        // // Start it up
+        // let mut op_ctx = self.context();
+        // let scope_block = self.push_block(Block::scope_block(block_type));
 
-        // Propagate our job group.
-        op_ctx.job_group = job_group.cloned();
+        // // Propagate our job group.
+        // op_ctx.job_group = job_group.cloned();
 
-        // Replace the context's cancel checker with one that checks the job group's signal.
-        let cancel_checker: CancelChecker = Box::new(move || check_cancel_signal().is_some());
-        op_ctx.cancel_checker = cancel_checker;
+        // // Replace the context's cancel checker with one that checks the job group's signal.
+        // let cancel_checker: CancelChecker = Box::new(move || check_cancel_signal().is_some());
+        // op_ctx.cancel_checker = cancel_checker;
 
-        // Restore the line counter.
-        let ps = node.parsed_source_ref();
-        let restore_line_counter = self.line_counter.scoped_replace(ps.line_counter());
+        // // Restore the line counter.
+        // let ps = node.parsed_source_ref();
+        // let restore_line_counter = self.line_counter.scoped_replace(ps.line_counter());
 
-        // Create a new execution context.
-        let mut execution_context = ExecutionContext::new(ps, block_io.clone(), &self.line_counter);
+        // // Create a new execution context.
+        // let mut execution_context = ExecutionContext::new(ps, block_io.clone(), &self.line_counter);
 
-        // Check the exec count so we know if anything got executed.
-        let prev_exec_count = self.libdata().exec_count;
-        let prev_status_count = self.libdata().status_count;
-        let reason = execution_context.eval_node(&op_ctx, &**node, Some(scope_block));
-        let new_exec_count = self.libdata().exec_count;
-        let new_status_count = self.libdata().status_count;
+        // // Check the exec count so we know if anything got executed.
+        // let prev_exec_count = self.libdata().exec_count;
+        // let prev_status_count = self.libdata().status_count;
+        // let reason = execution_context.eval_node(&op_ctx, &**node, Some(scope_block));
+        // let new_exec_count = self.libdata().exec_count;
+        // let new_status_count = self.libdata().status_count;
 
-        ScopeGuarding::commit(restore_line_counter);
-        self.pop_block(scope_block);
+        // ScopeGuarding::commit(restore_line_counter);
+        // self.pop_block(scope_block);
 
-        job_reap(self, false); // reap again
+        // job_reap(self, false); // reap again
 
-        let sig = signal_check_cancel();
-        if sig != 0 {
-            EvalRes::new(ProcStatus::from_signal(Signal::new(sig)))
-        } else {
-            let status = ProcStatus::from_exit_code(self.get_last_status());
-            let break_expand = reason == EndExecutionReason::error;
-            EvalRes {
-                status,
-                break_expand,
-                was_empty: !break_expand && prev_exec_count == new_exec_count,
-                no_status: prev_status_count == new_status_count,
-            }
-        }
+        // let sig = signal_check_cancel();
+        // if sig != 0 {
+        //     EvalRes::new(ProcStatus::from_signal(Signal::new(sig)))
+        // } else {
+        //     let status = ProcStatus::from_exit_code(self.get_last_status());
+        //     let break_expand = reason == EndExecutionReason::error;
+        //     EvalRes {
+        //         status,
+        //         break_expand,
+        //         was_empty: !break_expand && prev_exec_count == new_exec_count,
+        //         no_status: prev_status_count == new_status_count,
+        //     }
+        // }
+
+        EvalRes::new(ProcStatus::from_signal(Signal::new(1)))
     }
 
     /// Evaluate line as a list of parameters, i.e. tokenize it and perform parameter expansion and

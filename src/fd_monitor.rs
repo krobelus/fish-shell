@@ -392,6 +392,7 @@ impl BackgroundFdMonitor {
             if ret < 0 && !matches!(errno().0, libc::EINTR | libc::EBADF) {
                 // Surprising error
                 perror("select");
+                panic!();
             }
 
             // Re-acquire the lock.

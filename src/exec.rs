@@ -1434,6 +1434,66 @@ fn populate_subshell_output(lst: &mut Vec<WString>, buffer: &SeparatedBuffer, sp
     }
 }
 
+#[test]
+#[allow(deprecated)]
+fn test_bar() {
+    crate::threads::init();
+    crate::topic_monitor::topic_monitor_init();
+    let parser = Parser::new(EnvStack::new(), crate::parser::CancelBehavior::Clear);
+    for _i in 0..100 {
+        // IO buffer creation may fail (e.g. if we have too many open files to make a pipe), so this may
+        // be null.
+        let read_limit = crate::env::DEFAULT_READ_BYTE_LIMIT;
+        let bufferfill = IoBufferfill::create_opts(read_limit, STDOUT_FILENO).unwrap();
+
+        let mut io_chain = IoChain::new();
+        io_chain.push(bufferfill.clone());
+        let job_group = None;
+        let eval_res = parser.eval_with(L!(":"), &io_chain, job_group, BlockType::subst);
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let buffer = IoBufferfill::finish(bufferfill);
+    }
+}
+
+#[test]
+fn test_foo() {
+    crate::threads::init();
+    crate::topic_monitor::topic_monitor_init();
+    let parser = Parser::new(EnvStack::new(), crate::parser::CancelBehavior::Clear);
+    use std::os::fd::IntoRawFd;
+
+    fn begin_filling(
+        iobuffer: crate::io::IoBuffer,
+        fd: OwnedFd,
+    ) -> crate::fd_monitor::FdMonitorItemId {
+        let item_callback: crate::fd_monitor::Callback =
+            Box::new(move |fd: &mut crate::fds::AutoCloseFd| {
+                assert!(fd.as_raw_fd() >= 0, "Invalid fd");
+                let mut buf = iobuffer.0.lock().unwrap();
+                let ret = crate::io::IoBuffer::read_once(fd.as_raw_fd(), &mut buf);
+                if ret == 0
+                    || (ret < 0 && ![libc::EAGAIN, libc::EWOULDBLOCK].contains(&errno::errno().0))
+                {
+                    fd.close();
+                }
+            });
+        let fd = crate::fds::AutoCloseFd::new(fd.into_raw_fd());
+        crate::io::fd_monitor().add(fd, item_callback)
+    }
+
+    for _i in 0..100 {
+        let pipes = crate::fds::make_autoclose_pipes().unwrap();
+        crate::fds::make_fd_nonblocking(pipes.read.as_raw_fd()).unwrap();
+        let buffer = crate::io::IoBuffer::new(/*buffer_limit=*/ 2);
+        let item_id = begin_filling(buffer.clone(), pipes.read);
+
+        let fd = crate::io::fd_monitor().remove_item(item_id);
+        buffer.complete_and_take_buffer(fd);
+        // let bufferfill = IoBufferfill::create_opts(read_limit, STDOUT_FILENO).unwrap();
+        // IoBufferfill::finish(bufferfill);
+    }
+}
+
 /// Execute `cmd` in a subshell in `parser`. If `lst` is not null, populate it with the output.
 /// Return $status in `out_status`.
 /// If `job_group` is set, any spawned commands should join that job group.
@@ -1442,6 +1502,7 @@ fn populate_subshell_output(lst: &mut Vec<WString>, buffer: &SeparatedBuffer, sp
 /// `break_expand` is used to propagate whether the result should be "expansion breaking" in the
 /// sense that subshells used during string expansion should halt that expansion. Return the value
 /// of $status.
+#[allow(deprecated)]
 fn exec_subshell_internal(
     cmd: &wstr,
     parser: &Parser,
@@ -1471,15 +1532,25 @@ fn exec_subshell_internal(
 
     // IO buffer creation may fail (e.g. if we have too many open files to make a pipe), so this may
     // be null.
+    eprintln!("HELLO1");
+    std::thread::sleep_ms(2000);
+    eprintln!("HELLO2");
     let Ok(bufferfill) = IoBufferfill::create_opts(parser.scope().read_limit, STDOUT_FILENO) else {
         *break_expand = true;
         return Err(STATUS_CMD_ERROR);
     };
+    eprintln!("HELLO3");
+    std::thread::sleep_ms(2000);
+    eprintln!("HELLO4");
 
     let mut io_chain = IoChain::new();
     io_chain.push(bufferfill.clone());
     let eval_res = parser.eval_with(cmd, &io_chain, job_group, BlockType::subst);
+    std::thread::sleep_ms(2000);
+    eprintln!("HELLO5");
     let buffer = IoBufferfill::finish(bufferfill);
+    std::thread::sleep_ms(5000);
+    eprintln!("HELLO6");
     if buffer.discarded() {
         *break_expand = true;
         return Err(STATUS_READ_TOO_MUCH);

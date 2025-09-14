@@ -1,6 +1,6 @@
 name: Rust checks
 
-on: [push, pull_request]
+on: []
 
 permissions:
   contents: read
