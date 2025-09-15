@@ -8,16 +8,15 @@
 #include <sys/time.h>
 #include <unistd.h>
 
-#define MAX_ITEMS 500
+#define NUM_ITEMS 500
 
 typedef struct {
     int fd;
 } FdMonitorItem;
 
 typedef struct {
-    FdMonitorItem items[MAX_ITEMS];
+    FdMonitorItem items[NUM_ITEMS];
     int item_count;
-    int running;
     pthread_mutex_t mutex;
 } SharedData;
 
@@ -26,18 +25,19 @@ static SharedData g_shared_data = {0};
 static pthread_t g_background_thread;
 static int g_thread_started = 0;
 
-ssize_t io_buffer_read_once(int fd) {
+static void io_buffer_read_once(int fd) {
     assert(fd >= 0);
     char bytes[4096];
     ssize_t amt = read(fd, bytes, sizeof(bytes));
     assert(amt >= 0);  // no error
-    return amt;
+    assert(amt == 0);  // no write
 }
 
-void *background_fd_monitor_run(void *) {
+static void *background_fd_monitor_run(void *_arg) {
+    (void)_arg;
     SharedData *shared_data = &g_shared_data;
-    struct pollfd pollfds[MAX_ITEMS];
-    int item_fds[MAX_ITEMS];
+    struct pollfd pollfds[NUM_ITEMS];
+    int item_fds[NUM_ITEMS];
 
     while (1) {
         memset(pollfds, 0, sizeof(pollfds));
@@ -83,19 +83,15 @@ void *background_fd_monitor_run(void *) {
                     // Simulate the callback - read from fd and close it
                     if (item->fd < 0) continue;  // TODO
                     assert(item->fd >= 0);
-                    ssize_t read_ret = io_buffer_read_once(item->fd);
-                    if (read_ret == 0 ||
-                        (read_ret < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
-                        close(item->fd);
-                        item->fd = -1;
-                    }
+                    io_buffer_read_once(item->fd);
+                    close(item->fd);
+                    item->fd = -1;
                 }
             }
         }
 
         // Check for termination
         if ((is_wait_lap && shared_data->item_count == 0)) {
-            shared_data->running = 0;
             pthread_mutex_unlock(&shared_data->mutex);
             break;
         }
@@ -108,23 +104,18 @@ void *background_fd_monitor_run(void *) {
 
 int fd_monitor_add(int fd) {
     pthread_mutex_lock(&g_shared_data.mutex);
-
-    assert(g_shared_data.item_count < MAX_ITEMS);
-
+    assert(g_shared_data.item_count < NUM_ITEMS);
     int item_id = g_shared_data.item_count;
     g_shared_data.items[item_id].fd = fd;
     g_shared_data.item_count++;
+    pthread_mutex_unlock(&g_shared_data.mutex);
 
     // Start background thread if not started
-    if (!g_shared_data.running) {
-        g_shared_data.running = 1;
-        if (!g_thread_started) {
-            pthread_create(&g_background_thread, NULL, background_fd_monitor_run, NULL);
-            g_thread_started = 1;
-        }
+    if (!g_thread_started) {
+        pthread_create(&g_background_thread, NULL, background_fd_monitor_run, NULL);
+        g_thread_started = 1;
     }
 
-    pthread_mutex_unlock(&g_shared_data.mutex);
     return item_id;
 }
 
@@ -146,8 +137,8 @@ int fd_monitor_remove_item(int item_id) {
 int main() {
     pthread_mutex_init(&g_shared_data.mutex, NULL);
 
-    int item_ids[MAX_ITEMS];
-    for (int i = 0; i < MAX_ITEMS; i++) {
+    int item_ids[NUM_ITEMS];
+    for (int i = 0; i < NUM_ITEMS; i++) {
         int fds[2];
         int ok = pipe(fds) != -1;
         assert(ok);
@@ -160,11 +151,11 @@ int main() {
         item_ids[i] = fd_monitor_add(read_fd);
     }
 
-    for (int i = 0; i < MAX_ITEMS; i++) {
+    for (int i = 0; i < NUM_ITEMS; i++) {
         int item_id = item_ids[i];
         int removed_fd = fd_monitor_remove_item(item_id);
         if (removed_fd >= 0) {
-            while (io_buffer_read_once(removed_fd) > 0);
+            io_buffer_read_once(removed_fd);
             close(removed_fd);
         }
     }
