@@ -53,14 +53,14 @@ static void *background_fd_monitor_run(void *_arg) {
         int timeout_ms = is_wait_lap ? 256 : -1;  // -1 means wait forever
         pthread_mutex_unlock(&shared_data->mutex);
 
-        // Call poll() - this is where the Cygwin bug occurs
         int ret = poll(pollfds, nfds, timeout_ms);
         if (ret == -1 && errno != EINTR && errno != EBADF) {
             perror("select");  // Using "select" to match original
             if (errno == 0) {
-                // Possible Cygwin bug.
+                // Hit the bug!
                 _exit(1);
             }
+            // assert(0);
         }
 
         // Re-acquire lock and service items
@@ -69,16 +69,14 @@ static void *background_fd_monitor_run(void *_arg) {
         // Check if any monitored fds are ready
         for (int i = 0; i < nfds; i++) {
             if (!(pollfds[i].revents & POLLIN)) continue;
+            // TODO why do we ever get here?
             int item_idx = pollfds_index_to_item_index[i];
-            if (item_idx < shared_data->item_count) {
-                FdMonitorItem *item = &shared_data->items[item_idx];
-                // Simulate the callback - read from fd and close it
-                if (item->fd == -1) continue;  // TODO
-                assert(item->fd != -1);
-                io_buffer_read_once(item->fd);
-                close(item->fd);
-                item->fd = -1;
-            }
+            assert(item_idx < shared_data->item_count);
+            FdMonitorItem *item = &shared_data->items[item_idx];
+            if (item->fd == -1) continue;
+            io_buffer_read_once(item->fd);
+            close(item->fd);
+            item->fd = -1;
         }
 
         // Check for termination
