@@ -6,7 +6,7 @@
 #include <stdio.h>  // perror
 #include <unistd.h>
 
-#define NUM_ITEMS 500
+#define NUM_ITEMS 100
 
 typedef struct {
     int fd;
