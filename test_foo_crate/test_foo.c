@@ -186,16 +186,6 @@ int main() {
     }
 
     // Did not reproduce.
+    fprintf(stderr, "did NOT reproduce\n");
     _exit(0);
-
-    // // Clean up
-    // pthread_mutex_lock(&g_shared_data.mutex);
-    // g_shared_data.terminate = 1;
-    // pthread_mutex_unlock(&g_shared_data.mutex);
-
-    // if (g_thread_started) {
-    //     pthread_join(g_background_thread, NULL);
-    // }
-
-    // pthread_mutex_destroy(&g_shared_data.mutex);
 }
