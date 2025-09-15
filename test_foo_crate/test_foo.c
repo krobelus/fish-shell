@@ -9,7 +9,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 
-#define MAX_ITEMS 256
+#define MAX_ITEMS 2560
 
 typedef struct {
     int fd;
