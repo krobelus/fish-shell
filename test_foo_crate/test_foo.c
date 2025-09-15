@@ -4,7 +4,6 @@
 #include <poll.h>
 #include <pthread.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
 #include <unistd.h>
@@ -30,19 +29,14 @@ static int g_thread_started = 0;
 ssize_t io_buffer_read_once(int fd) {
     assert(fd >= 0);
     char bytes[4096];
-
-    // We want to swallow EINTR only; in particular EAGAIN needs to be returned back to the caller.
-    ssize_t amt;
-    do {
-        amt = read(fd, bytes, sizeof(bytes));
-    } while (amt < 0 && errno == EINTR);
-
+    ssize_t amt = read(fd, bytes, sizeof(bytes));
+    assert(amt >= 0);  // no error
     return amt;
 }
 
 void *background_fd_monitor_run(void *) {
     SharedData *shared_data = &g_shared_data;
-    struct pollfd pollfds[MAX_ITEMS + 1];
+    struct pollfd pollfds[MAX_ITEMS];
     int item_fds[MAX_ITEMS];
 
     while (1) {
@@ -72,7 +66,7 @@ void *background_fd_monitor_run(void *) {
             perror("select");  // Using "select" to match original
             if (errno == 0) {
                 // Possible Cygwin bug.
-                _exit(0);
+                _exit(1);
             }
         }
 
@@ -154,28 +148,23 @@ int main() {
 
     int item_ids[MAX_ITEMS];
     for (int i = 0; i < MAX_ITEMS; i++) {
-        int read_fd, write_fd;
         int fds[2];
         int ok = pipe(fds) != -1;
         assert(ok);
-        read_fd = fds[0];
-        write_fd = fds[1];
+        int read_fd = fds[0];
+        close(fds[1]);
         int flags = fcntl(read_fd, F_GETFL, 0);
         assert(flags != -1);
         ok = fcntl(read_fd, F_SETFL, flags | O_NONBLOCK) != -1;
         assert(ok);
-        int item_id = fd_monitor_add(read_fd);
-        item_ids[i] = item_id;
-        close(write_fd);  // TODO
+        item_ids[i] = fd_monitor_add(read_fd);
     }
 
     for (int i = 0; i < MAX_ITEMS; i++) {
         int item_id = item_ids[i];
         int removed_fd = fd_monitor_remove_item(item_id);
         if (removed_fd >= 0) {
-            while (io_buffer_read_once(removed_fd) > 0) {
-                // pass
-            }
+            while (io_buffer_read_once(removed_fd) > 0);
             close(removed_fd);
         }
     }
