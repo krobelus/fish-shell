@@ -18,7 +18,6 @@ typedef struct {
 
 typedef struct {
     int fd;
-    void *buffer;  // IoBuffer pointer
 } FdMonitorItem;
 
 typedef struct {
@@ -33,10 +32,6 @@ typedef struct {
     SharedData *data;
     int change_signal_fd;
 } BackgroundFdMonitor;
-
-typedef struct {
-    pthread_mutex_t mutex;
-} IoBuffer;
 
 // Global shared data
 static SharedData g_shared_data = {0};
@@ -71,21 +66,6 @@ int make_autoclose_pipes(int *read_fd, int *write_fd) {
     return 0;
 }
 
-IoBuffer *io_buffer_new() {
-    IoBuffer *buf = malloc(sizeof(IoBuffer));
-    if (!buf) return NULL;
-
-    pthread_mutex_init(&buf->mutex, NULL);
-    return buf;
-}
-
-void io_buffer_free(IoBuffer *buf) {
-    if (buf) {
-        pthread_mutex_destroy(&buf->mutex);
-        free(buf);
-    }
-}
-
 ssize_t io_buffer_read_once(int fd) {
     assert(fd >= 0);
     char bytes[4096];
@@ -97,22 +77,6 @@ ssize_t io_buffer_read_once(int fd) {
     } while (amt < 0 && errno == EINTR);
 
     return amt;
-}
-
-void auto_close_fd_close(AutoCloseFd *afd) {
-    if (afd->fd >= 0) {
-        close(afd->fd);
-        afd->fd = -1;
-        afd->valid = 0;
-    }
-}
-
-void complete_and_take_buffer(IoBuffer *buffer, AutoCloseFd *fd) {
-    pthread_mutex_lock(&buffer->mutex);
-    while (fd->valid && io_buffer_read_once(fd->fd) > 0) {
-        // pass
-    }
-    pthread_mutex_unlock(&buffer->mutex);
 }
 
 void *background_fd_monitor_run(void *arg) {
@@ -168,7 +132,6 @@ void *background_fd_monitor_run(void *arg) {
 
                     // Simulate the callback - read from fd and close it
                     assert(item->fd >= 0);
-                    IoBuffer *buf = (IoBuffer *)item->buffer;
                     ssize_t read_ret = io_buffer_read_once(item->fd);
                     if (read_ret == 0 ||
                         (read_ret < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
@@ -192,17 +155,13 @@ void *background_fd_monitor_run(void *arg) {
     return NULL;
 }
 
-int fd_monitor_add(int fd, IoBuffer *buffer) {
+int fd_monitor_add(int fd) {
     pthread_mutex_lock(&g_shared_data.mutex);
 
-    if (g_shared_data.item_count >= MAX_ITEMS) {
-        pthread_mutex_unlock(&g_shared_data.mutex);
-        return -1;
-    }
+    assert(g_shared_data.item_count < MAX_ITEMS);
 
     int item_id = g_shared_data.item_count;
     g_shared_data.items[item_id].fd = fd;
-    g_shared_data.items[item_id].buffer = buffer;
     g_shared_data.item_count++;
 
     // Start background thread if not started
@@ -239,13 +198,10 @@ int fd_monitor_remove_item(int item_id) {
 
     int fd = g_shared_data.items[item_id].fd;
     g_shared_data.items[item_id].fd = -1;
-    g_shared_data.items[item_id].buffer = NULL;
 
     pthread_mutex_unlock(&g_shared_data.mutex);
     return fd;
 }
-
-int begin_filling(IoBuffer *buffer, int fd) { return fd_monitor_add(fd, buffer); }
 
 void test_foo() {
     pthread_mutex_init(&g_shared_data.mutex, NULL);
@@ -264,29 +220,16 @@ void test_foo() {
             continue;
         }
 
-        IoBuffer *buffer = io_buffer_new();
-        if (!buffer) {
-            close(read_fd);
-            close(write_fd);
-            continue;
-        }
-
-        int item_id = begin_filling(buffer, read_fd);
-        if (item_id < 0) {
-            io_buffer_free(buffer);
-            close(read_fd);
-            close(write_fd);
-            continue;
-        }
+        int item_id = fd_monitor_add(read_fd);
 
         int removed_fd = fd_monitor_remove_item(item_id);
         if (removed_fd >= 0) {
-            AutoCloseFd afd = {removed_fd, 1};
-            complete_and_take_buffer(buffer, &afd);
-            auto_close_fd_close(&afd);
+            while (io_buffer_read_once(removed_fd) > 0) {
+                // pass
+            }
+            close(removed_fd);
         }
 
-        io_buffer_free(buffer);
         close(write_fd);
     }
 
