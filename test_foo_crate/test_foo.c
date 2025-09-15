@@ -60,7 +60,7 @@ static void *background_fd_monitor_run(void *_arg) {
                 // Hit the bug!
                 _exit(1);
             }
-            // assert(0);
+            assert(0);
         }
 
         // Re-acquire lock and service items
