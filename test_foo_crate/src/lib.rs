@@ -139,7 +139,44 @@ impl FdReadableSet {
     }
 }
 
-// IO buffer code removed - not needed for select/poll bug reproduction
+// === io module ===
+#[derive(Clone)]
+pub struct IoBuffer(pub Arc<Mutex<Vec<u8>>>);
+
+impl IoBuffer {
+    pub fn new(_buffer_limit: usize) -> Self {
+        IoBuffer(Arc::new(Mutex::new(Vec::new())))
+    }
+
+    pub fn read_once(fd: RawFd, _buffer: &mut std::sync::MutexGuard<'_, Vec<u8>>) -> isize {
+        assert!(fd >= 0, "Invalid fd");
+        let mut bytes = [b'\0'; 4096];
+        
+        // We want to swallow EINTR only; in particular EAGAIN needs to be returned back to the caller.
+        let amt = loop {
+            let amt = unsafe {
+                libc::read(
+                    fd,
+                    bytes.as_mut_ptr() as *mut libc::c_void,
+                    bytes.len(),
+                )
+            };
+            if amt < 0 && errno::errno().0 == libc::EINTR {
+                continue;
+            }
+            break amt;
+        };
+        amt
+    }
+
+    pub fn complete_and_take_buffer(&self, fd: AutoCloseFd) -> Vec<u8> {
+        let mut locked_buff = self.0.lock().unwrap();
+        while fd.is_valid() && IoBuffer::read_once(fd.as_raw_fd(), &mut locked_buff) > 0 {
+            // pass
+        }
+        std::mem::take(&mut *locked_buff)
+    }
+}
 
 use std::sync::LazyLock;
 
