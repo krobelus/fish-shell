@@ -151,16 +151,11 @@ impl IoBuffer {
     pub fn read_once(fd: RawFd, _buffer: &mut std::sync::MutexGuard<'_, Vec<u8>>) -> isize {
         assert!(fd >= 0, "Invalid fd");
         let mut bytes = [b'\0'; 4096];
-        
+
         // We want to swallow EINTR only; in particular EAGAIN needs to be returned back to the caller.
         let amt = loop {
-            let amt = unsafe {
-                libc::read(
-                    fd,
-                    bytes.as_mut_ptr() as *mut libc::c_void,
-                    bytes.len(),
-                )
-            };
+            let amt =
+                unsafe { libc::read(fd, bytes.as_mut_ptr() as *mut libc::c_void, bytes.len()) };
             if amt < 0 && errno::errno().0 == libc::EINTR {
                 continue;
             }
