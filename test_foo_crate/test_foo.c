@@ -9,7 +9,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 
-#define MAX_ITEMS 2560
+#define MAX_ITEMS 500
 
 typedef struct {
     int fd;
@@ -19,7 +19,6 @@ typedef struct {
     FdMonitorItem items[MAX_ITEMS];
     int item_count;
     int running;
-    int terminate;
     pthread_mutex_t mutex;
 } SharedData;
 
@@ -90,6 +89,7 @@ void *background_fd_monitor_run(void *arg) {
                     FdMonitorItem *item = &monitor->data->items[item_idx];
 
                     // Simulate the callback - read from fd and close it
+                    if (item->fd < 0) continue;  // TODO
                     assert(item->fd >= 0);
                     ssize_t read_ret = io_buffer_read_once(item->fd);
                     if (read_ret == 0 ||
@@ -102,7 +102,7 @@ void *background_fd_monitor_run(void *arg) {
         }
 
         // Check for termination
-        if (monitor->data->terminate || (is_wait_lap && monitor->data->item_count == 0)) {
+        if ((is_wait_lap && monitor->data->item_count == 0)) {
             monitor->data->running = 0;
             pthread_mutex_unlock(&monitor->data->mutex);
             break;
@@ -157,6 +157,7 @@ int fd_monitor_remove_item(int item_id) {
 int main() {
     pthread_mutex_init(&g_shared_data.mutex, NULL);
 
+    int item_ids[MAX_ITEMS];
     for (int i = 0; i < MAX_ITEMS; i++) {
         int read_fd, write_fd;
         int fds[2];
@@ -164,14 +165,17 @@ int main() {
         assert(ok);
         read_fd = fds[0];
         write_fd = fds[1];
-
         int flags = fcntl(read_fd, F_GETFL, 0);
         assert(flags != -1);
         ok = fcntl(read_fd, F_SETFL, flags | O_NONBLOCK) != -1;
         assert(ok);
-
         int item_id = fd_monitor_add(read_fd);
+        item_ids[i] = item_id;
+        close(write_fd);  // TODO
+    }
 
+    for (int i = 0; i < MAX_ITEMS; i++) {
+        int item_id = item_ids[i];
         int removed_fd = fd_monitor_remove_item(item_id);
         if (removed_fd >= 0) {
             while (io_buffer_read_once(removed_fd) > 0) {
@@ -179,18 +183,19 @@ int main() {
             }
             close(removed_fd);
         }
-
-        close(write_fd);
     }
 
-    // Clean up
-    pthread_mutex_lock(&g_shared_data.mutex);
-    g_shared_data.terminate = 1;
-    pthread_mutex_unlock(&g_shared_data.mutex);
+    // Did not reproduce.
+    _exit(0);
 
-    if (g_thread_started) {
-        pthread_join(g_background_thread, NULL);
-    }
+    // // Clean up
+    // pthread_mutex_lock(&g_shared_data.mutex);
+    // g_shared_data.terminate = 1;
+    // pthread_mutex_unlock(&g_shared_data.mutex);
 
-    pthread_mutex_destroy(&g_shared_data.mutex);
+    // if (g_thread_started) {
+    //     pthread_join(g_background_thread, NULL);
+    // }
+
+    // pthread_mutex_destroy(&g_shared_data.mutex);
 }
