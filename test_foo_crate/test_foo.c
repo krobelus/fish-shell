@@ -27,7 +27,7 @@ static void io_buffer_read_once(int fd) {
     assert(fd != -1);
     char data[1];
     ssize_t amt = read(fd, data, 1);
-    assert(amt >= 0);  // no error
+    assert(amt >= 0 && "expecting no IO error or interrupt");
     assert(amt == 0);  // no write
 }
 
@@ -50,23 +50,20 @@ static void *background_fd_monitor_run(void *_arg) {
         }
 
         int is_wait_lap = (nfds == 0);
-        int timeout_ms = is_wait_lap ? 256 : -1;  // -1 means wait forever
+        int timeout_ms = is_wait_lap ? 2 : -1;  // -1 means wait forever
         pthread_mutex_unlock(&shared_data->mutex);
 
         int ret = poll(pollfds, nfds, timeout_ms);
-        if (ret == -1 && errno != EINTR && errno != EBADF) {
+        if (ret == -1) {
             perror("select");  // Using "select" to match original
             if (errno == 0) {
                 // Hit the bug!
                 _exit(1);
             }
-            assert(0);
+            assert(0 && "expecting no IO error or interrupt");
         }
 
-        // Re-acquire lock and service items
         pthread_mutex_lock(&shared_data->mutex);
-
-        // Check if any monitored fds are ready
         for (int i = 0; i < nfds; i++) {
             if (!(pollfds[i].revents & POLLIN)) continue;
             // TODO why do we ever get here?
@@ -79,7 +76,6 @@ static void *background_fd_monitor_run(void *_arg) {
             item->fd = -1;
         }
 
-        // Check for termination
         if ((is_wait_lap && shared_data->item_count == 0)) {
             pthread_mutex_unlock(&shared_data->mutex);
             break;
