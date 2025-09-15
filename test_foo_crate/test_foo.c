@@ -25,28 +25,12 @@ typedef struct {
 
 typedef struct {
     SharedData *data;
-    int change_signal_fd;
 } BackgroundFdMonitor;
 
 // Global shared data
 static SharedData g_shared_data = {0};
 static pthread_t g_background_thread;
 static int g_thread_started = 0;
-
-void perror_custom(const char *s) {
-    int e = errno;
-    fprintf(stderr, "%s: %s\n", s, strerror(e));
-}
-
-int make_autoclose_pipes(int *read_fd, int *write_fd) {
-    int fds[2];
-    if (pipe(fds) == -1) {
-        return -1;
-    }
-    *read_fd = fds[0];
-    *write_fd = fds[1];
-    return 0;
-}
 
 ssize_t io_buffer_read_once(int fd) {
     assert(fd >= 0);
@@ -67,16 +51,9 @@ void *background_fd_monitor_run(void *arg) {
     int item_fds[MAX_ITEMS];
 
     while (1) {
-        // Clear poll array
         memset(pollfds, 0, sizeof(pollfds));
         int nfds = 0;
 
-        // Add change signal fd
-        pollfds[nfds].fd = monitor->change_signal_fd;
-        pollfds[nfds].events = POLLIN;
-        nfds++;
-
-        // Lock and snapshot items
         pthread_mutex_lock(&monitor->data->mutex);
         int item_count = 0;
         for (int i = 0; i < monitor->data->item_count; i++) {
@@ -98,7 +75,7 @@ void *background_fd_monitor_run(void *arg) {
         int ret = poll(pollfds, nfds, timeout_ms);
         if (ret < 0 && errno != EINTR && errno != EBADF) {
             // This is where we expect to see the bug on Cygwin
-            perror_custom("select");  // Using "select" to match original
+            perror("select");  // Using "select" to match original
             abort();
         }
 
@@ -106,7 +83,7 @@ void *background_fd_monitor_run(void *arg) {
         pthread_mutex_lock(&monitor->data->mutex);
 
         // Check if any monitored fds are ready
-        for (int i = 1; i < nfds; i++) {  // Skip change signal fd at index 0
+        for (int i = 0; i < nfds; i++) {
             if (pollfds[i].revents & POLLIN) {
                 int item_idx = item_fds[i - 1];
                 if (item_idx < monitor->data->item_count) {
@@ -153,14 +130,6 @@ int fd_monitor_add(int fd) {
             BackgroundFdMonitor *monitor = malloc(sizeof(BackgroundFdMonitor));
             monitor->data = &g_shared_data;
 
-            // Create dummy change signal fd (not used but needed for poll array)
-            int dummy_pipes[2];
-            if (make_autoclose_pipes(&dummy_pipes[0], &dummy_pipes[1]) == 0) {
-                monitor->change_signal_fd = dummy_pipes[0];
-            } else {
-                monitor->change_signal_fd = -1;
-            }
-
             pthread_create(&g_background_thread, NULL, background_fd_monitor_run, monitor);
             g_thread_started = 1;
         }
@@ -190,14 +159,15 @@ int main() {
 
     for (int i = 0; i < MAX_ITEMS; i++) {
         int read_fd, write_fd;
-        if (make_autoclose_pipes(&read_fd, &write_fd) != 0) {
-            perror_custom("pipe");
-            continue;
-        }
+        int fds[2];
+        int ok = pipe(fds) != -1;
+        assert(ok);
+        read_fd = fds[0];
+        write_fd = fds[1];
 
         int flags = fcntl(read_fd, F_GETFL, 0);
         assert(flags != -1);
-        int ok = fcntl(read_fd, F_SETFL, flags | O_NONBLOCK) != -1;
+        ok = fcntl(read_fd, F_SETFL, flags | O_NONBLOCK) != -1;
         assert(ok);
 
         int item_id = fd_monitor_add(read_fd);
