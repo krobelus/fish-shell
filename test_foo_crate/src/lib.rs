@@ -262,18 +262,13 @@ pub struct FdMonitorItem {
 // FdEventSignaller for waking up background thread
 pub struct FdEventSignaller {
     fd: OwnedFd,
-    write: OwnedFd,
 }
 
 impl FdEventSignaller {
     pub fn new() -> Self {
         let pipes = make_autoclose_pipes().expect("Failed to create pipes");
         make_fd_nonblocking(pipes.read.as_raw_fd()).unwrap();
-        make_fd_nonblocking(pipes.write.as_raw_fd()).unwrap();
-        Self {
-            fd: pipes.read,
-            write: pipes.write,
-        }
+        Self { fd: pipes.read }
     }
 
     pub fn read_fd(&self) -> RawFd {
@@ -299,24 +294,6 @@ impl FdEventSignaller {
             perror("read");
         }
         ret > 0
-    }
-
-    pub fn post(&self) {
-        return;
-        let write_fd = self.write_fd();
-        if write_fd < 0 {
-            return; // Invalid fd, don't try to write
-        }
-
-        let c = 1_u8;
-        let ret = unsafe { libc::write(write_fd, &c as *const u8 as *const libc::c_void, 1) };
-        if ret < 0 && ![libc::EAGAIN, libc::EWOULDBLOCK, libc::EBADF].contains(&errno::errno().0) {
-            perror("write");
-        }
-    }
-
-    fn write_fd(&self) -> RawFd {
-        self.write.as_raw_fd()
     }
 }
 
@@ -453,7 +430,6 @@ impl FdMonitor {
             });
         }
 
-        self.change_signaller.post();
         item_id
     }
 
@@ -462,7 +438,6 @@ impl FdMonitor {
         let mut data = self.data.lock().expect("Mutex poisoned!");
         let removed = data.items.remove(&item_id).expect("Item ID not found");
         drop(data);
-        self.change_signaller.post();
         removed.fd
     }
 }
@@ -473,7 +448,6 @@ impl Drop for FdMonitor {
         if let Ok(mut data) = self.data.lock() {
             data.terminate = true;
         }
-        self.change_signaller.post();
 
         // Wait briefly for the thread to exit
         std::thread::sleep(Duration::from_millis(50));
