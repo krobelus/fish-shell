@@ -43,19 +43,6 @@ void perror_custom(const char *s) {
     fprintf(stderr, "%s: %s\n", s, strerror(e));
 }
 
-int make_fd_nonblocking(int fd) {
-    int flags = fcntl(fd, F_GETFL, 0);
-    if (flags == -1) return -1;
-
-    int nonblocking = (flags & O_NONBLOCK) == O_NONBLOCK;
-    if (!nonblocking) {
-        if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1) {
-            return -1;
-        }
-    }
-    return 0;
-}
-
 int make_autoclose_pipes(int *read_fd, int *write_fd) {
     int fds[2];
     if (pipe(fds) == -1) {
@@ -203,22 +190,20 @@ int fd_monitor_remove_item(int item_id) {
     return fd;
 }
 
-void test_foo() {
+int main() {
     pthread_mutex_init(&g_shared_data.mutex, NULL);
 
-    for (int i = 0; i < 1000; i++) {
+    for (int i = 0; i < MAX_ITEMS; i++) {
         int read_fd, write_fd;
         if (make_autoclose_pipes(&read_fd, &write_fd) != 0) {
             perror_custom("pipe");
             continue;
         }
 
-        if (make_fd_nonblocking(read_fd) != 0) {
-            perror_custom("make_fd_nonblocking");
-            close(read_fd);
-            close(write_fd);
-            continue;
-        }
+        int flags = fcntl(read_fd, F_GETFL, 0);
+        assert(flags != -1);
+        int ok = fcntl(read_fd, F_SETFL, flags | O_NONBLOCK) != -1;
+        assert(ok);
 
         int item_id = fd_monitor_add(read_fd);
 
@@ -243,9 +228,4 @@ void test_foo() {
     }
 
     pthread_mutex_destroy(&g_shared_data.mutex);
-}
-
-int main() {
-    test_foo();
-    return 0;
 }
