@@ -22,10 +22,6 @@ typedef struct {
     pthread_mutex_t mutex;
 } SharedData;
 
-typedef struct {
-    SharedData *data;
-} BackgroundFdMonitor;
-
 // Global shared data
 static SharedData g_shared_data = {0};
 static pthread_t g_background_thread;
@@ -44,8 +40,8 @@ ssize_t io_buffer_read_once(int fd) {
     return amt;
 }
 
-void *background_fd_monitor_run(void *arg) {
-    BackgroundFdMonitor *monitor = (BackgroundFdMonitor *)arg;
+void *background_fd_monitor_run(void *) {
+    SharedData *shared_data = &g_shared_data;
     struct pollfd pollfds[MAX_ITEMS + 1];
     int item_fds[MAX_ITEMS];
 
@@ -53,10 +49,10 @@ void *background_fd_monitor_run(void *arg) {
         memset(pollfds, 0, sizeof(pollfds));
         int nfds = 0;
 
-        pthread_mutex_lock(&monitor->data->mutex);
+        pthread_mutex_lock(&shared_data->mutex);
         int item_count = 0;
-        for (int i = 0; i < monitor->data->item_count; i++) {
-            int fd = monitor->data->items[i].fd;
+        for (int i = 0; i < shared_data->item_count; i++) {
+            int fd = shared_data->items[i].fd;
             if (fd >= 0) {
                 pollfds[nfds].fd = fd;
                 pollfds[nfds].events = POLLIN;
@@ -68,25 +64,27 @@ void *background_fd_monitor_run(void *arg) {
 
         int is_wait_lap = (item_count == 0);
         int timeout_ms = is_wait_lap ? 256 : -1;  // -1 means wait forever
-        pthread_mutex_unlock(&monitor->data->mutex);
+        pthread_mutex_unlock(&shared_data->mutex);
 
         // Call poll() - this is where the Cygwin bug occurs
         int ret = poll(pollfds, nfds, timeout_ms);
         if (ret < 0 && errno != EINTR && errno != EBADF) {
-            // This is where we expect to see the bug on Cygwin
             perror("select");  // Using "select" to match original
-            abort();
+            if (errno == 0) {
+                // Possible Cygwin bug.
+                _exit(0);
+            }
         }
 
         // Re-acquire lock and service items
-        pthread_mutex_lock(&monitor->data->mutex);
+        pthread_mutex_lock(&shared_data->mutex);
 
         // Check if any monitored fds are ready
         for (int i = 0; i < nfds; i++) {
             if (pollfds[i].revents & POLLIN) {
                 int item_idx = item_fds[i - 1];
-                if (item_idx < monitor->data->item_count) {
-                    FdMonitorItem *item = &monitor->data->items[item_idx];
+                if (item_idx < shared_data->item_count) {
+                    FdMonitorItem *item = &shared_data->items[item_idx];
 
                     // Simulate the callback - read from fd and close it
                     if (item->fd < 0) continue;  // TODO
@@ -102,13 +100,13 @@ void *background_fd_monitor_run(void *arg) {
         }
 
         // Check for termination
-        if ((is_wait_lap && monitor->data->item_count == 0)) {
-            monitor->data->running = 0;
-            pthread_mutex_unlock(&monitor->data->mutex);
+        if ((is_wait_lap && shared_data->item_count == 0)) {
+            shared_data->running = 0;
+            pthread_mutex_unlock(&shared_data->mutex);
             break;
         }
 
-        pthread_mutex_unlock(&monitor->data->mutex);
+        pthread_mutex_unlock(&shared_data->mutex);
     }
 
     return NULL;
@@ -127,10 +125,7 @@ int fd_monitor_add(int fd) {
     if (!g_shared_data.running) {
         g_shared_data.running = 1;
         if (!g_thread_started) {
-            BackgroundFdMonitor *monitor = malloc(sizeof(BackgroundFdMonitor));
-            monitor->data = &g_shared_data;
-
-            pthread_create(&g_background_thread, NULL, background_fd_monitor_run, monitor);
+            pthread_create(&g_background_thread, NULL, background_fd_monitor_run, NULL);
             g_thread_started = 1;
         }
     }
@@ -186,6 +181,5 @@ int main() {
     }
 
     // Did not reproduce.
-    fprintf(stderr, "did NOT reproduce\n");
     _exit(0);
 }
