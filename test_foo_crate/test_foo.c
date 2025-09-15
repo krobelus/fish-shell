@@ -3,9 +3,7 @@
 #include <fcntl.h>
 #include <poll.h>
 #include <pthread.h>
-#include <stdio.h>
-#include <string.h>
-#include <sys/time.h>
+#include <stdio.h>  // perror
 #include <unistd.h>
 
 #define NUM_ITEMS 500
@@ -26,7 +24,7 @@ static pthread_t g_background_thread;
 static int g_thread_started = 0;
 
 static void io_buffer_read_once(int fd) {
-    assert(fd >= 0);
+    assert(fd != -1);
     char data[1];
     ssize_t amt = read(fd, data, 1);
     assert(amt >= 0);  // no error
@@ -36,28 +34,22 @@ static void io_buffer_read_once(int fd) {
 static void *background_fd_monitor_run(void *_arg) {
     (void)_arg;
     SharedData *shared_data = &g_shared_data;
-    struct pollfd pollfds[NUM_ITEMS];
-    int item_fds[NUM_ITEMS];
-
     while (1) {
-        memset(pollfds, 0, sizeof(pollfds));
+        struct pollfd pollfds[NUM_ITEMS] = {0};
+        int pollfds_index_to_item_index[NUM_ITEMS];
         int nfds = 0;
 
         pthread_mutex_lock(&shared_data->mutex);
-        int item_count = 0;
         for (int i = 0; i < shared_data->item_count; i++) {
             int fd = shared_data->items[i].fd;
             if (fd == -1) continue;
-            if (fd >= 0) {
-                pollfds[nfds].fd = fd;
-                pollfds[nfds].events = POLLIN;
-                item_fds[item_count] = i;  // Map back to item index
-                nfds++;
-                item_count++;
-            }
+            pollfds[nfds].fd = fd;
+            pollfds[nfds].events = POLLIN;
+            pollfds_index_to_item_index[nfds] = i;  // Map back to item index
+            nfds++;
         }
 
-        int is_wait_lap = (item_count == 0);
+        int is_wait_lap = (nfds == 0);
         int timeout_ms = is_wait_lap ? 256 : -1;  // -1 means wait forever
         pthread_mutex_unlock(&shared_data->mutex);
 
@@ -76,18 +68,16 @@ static void *background_fd_monitor_run(void *_arg) {
 
         // Check if any monitored fds are ready
         for (int i = 0; i < nfds; i++) {
-            if (pollfds[i].revents & POLLIN) {
-                int item_idx = item_fds[i - 1];
-                if (item_idx < shared_data->item_count) {
-                    FdMonitorItem *item = &shared_data->items[item_idx];
-
-                    // Simulate the callback - read from fd and close it
-                    if (item->fd == -1) continue;  // TODO
-                    assert(item->fd >= 0);
-                    io_buffer_read_once(item->fd);
-                    close(item->fd);
-                    item->fd = -1;
-                }
+            if (!(pollfds[i].revents & POLLIN)) continue;
+            int item_idx = pollfds_index_to_item_index[i];
+            if (item_idx < shared_data->item_count) {
+                FdMonitorItem *item = &shared_data->items[item_idx];
+                // Simulate the callback - read from fd and close it
+                if (item->fd == -1) continue;  // TODO
+                assert(item->fd != -1);
+                io_buffer_read_once(item->fd);
+                close(item->fd);
+                item->fd = -1;
             }
         }
 
@@ -155,7 +145,7 @@ int main() {
     for (int i = 0; i < NUM_ITEMS; i++) {
         int item_id = item_ids[i];
         int removed_fd = fd_monitor_remove_item(item_id);
-        if (removed_fd >= 0) {
+        if (removed_fd != -1) {
             io_buffer_read_once(removed_fd);
             close(removed_fd);
         }
