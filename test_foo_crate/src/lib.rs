@@ -462,8 +462,8 @@ fn test_foo() {
     use std::os::fd::IntoRawFd;
 
     for _i in 0..100 {
-        // Reduced iterations to focus on the bug
         let pipes = make_autoclose_pipes().unwrap();
+        make_fd_nonblocking(pipes.read.as_raw_fd()).unwrap();  // This was in the original
         let item_id = begin_filling(pipes.read);
         let _fd = fd_monitor().remove_item(item_id);
         // Allow some time for background thread to potentially hit the select issue
