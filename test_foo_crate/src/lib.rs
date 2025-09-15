@@ -1,54 +1,17 @@
 // Minimal dependencies for test_foo() function
 use std::collections::HashMap;
-use std::os::unix::io::{AsRawFd, FromRawFd, OwnedFd, RawFd};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Duration;
 use std::ffi::CStr;
 use std::io::Write;
+use std::os::unix::io::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 // External dependencies
 extern crate errno;
 extern crate libc;
 
-// === threads module ===
-static MAIN_THREAD_ID: OnceLock<usize> = OnceLock::new();
-
-fn thread_id() -> usize {
-    unsafe { libc::pthread_self() as usize }
-}
-
-pub fn init() {
-    MAIN_THREAD_ID
-        .set(thread_id())
-        .expect("threads::init() must only be called once (at startup)!");
-}
-
-// === topic_monitor module ===
-static mut s_principal: *const TopicMonitor = std::ptr::null();
-
-#[derive(Default)]
-pub struct TopicMonitor {
-    status: AtomicU64,
-}
-
-unsafe impl Send for TopicMonitor {}
-unsafe impl Sync for TopicMonitor {}
-
-impl TopicMonitor {
-    pub fn initialize() -> &'static Self {
-        unsafe {
-            if s_principal.is_null() {
-                s_principal = Box::into_raw(Box::default());
-            }
-            &*s_principal
-        }
-    }
-}
-
-pub fn topic_monitor_init() {
-    TopicMonitor::initialize();
-}
+// Minimal initialization - not needed for select/poll bug reproduction
 
 // === wutil module (perror function) ===
 pub fn perror(s: &str) {
@@ -65,40 +28,7 @@ pub fn perror(s: &str) {
     let _ = stderr.write_all(b"\n");
 }
 
-// === parser module ===
-#[derive(Default, Debug, Clone, Copy)]
-pub enum CancelBehavior {
-    #[default]
-    Return,
-    Clear,
-}
-
-pub struct Parser {
-    pub variables: EnvStack,
-    cancel_behavior: CancelBehavior,
-}
-
-impl Parser {
-    pub fn new(variables: EnvStack, cancel_behavior: CancelBehavior) -> Parser {
-        Self {
-            variables,
-            cancel_behavior,
-        }
-    }
-}
-
-// === env module ===
-pub struct EnvStack {
-    inner: Arc<Mutex<()>>,
-}
-
-impl EnvStack {
-    pub fn new() -> EnvStack {
-        EnvStack {
-            inner: Arc::new(Mutex::new(())),
-        }
-    }
-}
+// Parser/environment modules removed - not needed for select/poll bug
 
 // === fd_readable_set module ===
 pub enum Timeout {
@@ -108,7 +38,7 @@ pub enum Timeout {
 
 impl Timeout {
     pub const ZERO: Timeout = Timeout::Duration(Duration::ZERO);
-    
+
     #[allow(unused)]
     fn as_poll_msecs(&self) -> libc::c_int {
         match self {
@@ -209,81 +139,7 @@ impl FdReadableSet {
     }
 }
 
-// === io module ===
-pub struct SeparatedBuffer {
-    buffer_limit: usize,
-    contents_size: usize,
-    elements: Vec<Vec<u8>>,
-    discard: bool,
-}
-
-impl SeparatedBuffer {
-    pub fn new(limit: usize) -> Self {
-        SeparatedBuffer {
-            buffer_limit: limit,
-            contents_size: 0,
-            elements: vec![],
-            discard: false,
-        }
-    }
-
-    pub fn limit(&self) -> usize {
-        self.buffer_limit
-    }
-
-    pub fn clear(&mut self) {
-        self.contents_size = 0;
-        self.elements.clear();
-        self.discard = false;
-    }
-}
-
-#[derive(Clone)]
-pub struct IoBuffer(pub Arc<Mutex<SeparatedBuffer>>);
-
-impl IoBuffer {
-    pub fn new(buffer_limit: usize) -> Self {
-        IoBuffer(Arc::new(Mutex::new(SeparatedBuffer::new(buffer_limit))))
-    }
-
-    pub fn read_once(fd: RawFd, buffer: &mut std::sync::MutexGuard<'_, SeparatedBuffer>) -> isize {
-        assert!(fd >= 0, "Invalid fd");
-        let mut bytes = [b'\0'; 4096 * 4];
-
-        // We want to swallow EINTR only; in particular EAGAIN needs to be returned back to the caller.
-        let amt = loop {
-            let amt = unsafe {
-                libc::read(
-                    fd,
-                    std::ptr::addr_of_mut!(bytes).cast(),
-                    std::mem::size_of_val(&bytes),
-                )
-            };
-            if amt < 0 && errno::errno().0 == libc::EINTR {
-                continue;
-            }
-            break amt;
-        };
-
-        if amt > 0 {
-            buffer.elements.push(bytes[..amt as usize].to_vec());
-            buffer.contents_size += amt as usize;
-        }
-        amt
-    }
-
-    pub fn complete_and_take_buffer(&self, fd: AutoCloseFd) -> SeparatedBuffer {
-        let mut locked_buff = self.0.lock().unwrap();
-        while fd.is_valid() && IoBuffer::read_once(fd.as_raw_fd(), &mut locked_buff) > 0 {
-            // pass
-        }
-
-        let mut result = SeparatedBuffer::new(locked_buff.limit());
-        std::mem::swap(&mut result, &mut locked_buff);
-        locked_buff.clear();
-        result
-    }
-}
+// IO buffer code removed - not needed for select/poll bug reproduction
 
 use std::sync::LazyLock;
 
@@ -371,10 +227,6 @@ pub struct FdMonitorItem {
     callback: Callback,
 }
 
-struct FdMonitorData {
-    items: HashMap<FdMonitorItemId, FdMonitorItem>,
-}
-
 // FdEventSignaller for waking up background thread
 pub struct FdEventSignaller {
     fd: OwnedFd,
@@ -422,15 +274,9 @@ impl FdEventSignaller {
         if write_fd < 0 {
             return; // Invalid fd, don't try to write
         }
-        
+
         let c = 1_u8;
-        let ret = unsafe {
-            libc::write(
-                write_fd,
-                &c as *const u8 as *const libc::c_void,
-                1,
-            )
-        };
+        let ret = unsafe { libc::write(write_fd, &c as *const u8 as *const libc::c_void, 1) };
         if ret < 0 && ![libc::EAGAIN, libc::EWOULDBLOCK, libc::EBADF].contains(&errno::errno().0) {
             perror("write");
         }
@@ -497,7 +343,8 @@ impl BackgroundFdMonitor {
             };
 
             drop(data);
-            let ret = fds.check_readable(timeout.map(Timeout::Duration).unwrap_or(Timeout::Forever));
+            let ret =
+                fds.check_readable(timeout.map(Timeout::Duration).unwrap_or(Timeout::Forever));
             if ret < 0 && !matches!(errno::errno().0, libc::EINTR | libc::EBADF) {
                 perror("select");
                 panic!();
@@ -594,7 +441,7 @@ impl Drop for FdMonitor {
             data.terminate = true;
         }
         self.change_signaller.post();
-        
+
         // Wait briefly for the thread to exit
         std::thread::sleep(Duration::from_millis(50));
     }
@@ -603,33 +450,23 @@ impl Drop for FdMonitor {
 // === The test_foo function ===
 #[test]
 fn test_foo() {
-    init();
-    topic_monitor_init();
-    let _parser = Parser::new(EnvStack::new(), CancelBehavior::Clear);
-    use std::os::fd::IntoRawFd;
-
-    fn begin_filling(iobuffer: IoBuffer, fd: OwnedFd) -> FdMonitorItemId {
+    // Minimal test to reproduce Cygwin select/poll errno issue
+    fn begin_filling(fd: OwnedFd) -> FdMonitorItemId {
         let item_callback: Callback = Box::new(move |fd: &mut AutoCloseFd| {
-            assert!(fd.as_raw_fd() >= 0, "Invalid fd");
-            let mut buf = iobuffer.0.lock().unwrap();
-            let ret = IoBuffer::read_once(fd.as_raw_fd(), &mut buf);
-            if ret == 0
-                || (ret < 0 && ![libc::EAGAIN, libc::EWOULDBLOCK].contains(&errno::errno().0))
-            {
-                fd.close();
-            }
+            // Just close the fd when it becomes readable
+            fd.close();
         });
         let fd = AutoCloseFd::new(fd.into_raw_fd());
         fd_monitor().add(fd, item_callback)
     }
+    use std::os::fd::IntoRawFd;
 
     for _i in 0..100 {
+        // Reduced iterations to focus on the bug
         let pipes = make_autoclose_pipes().unwrap();
-        make_fd_nonblocking(pipes.read.as_raw_fd()).unwrap();
-        let buffer = IoBuffer::new(/*buffer_limit=*/ 2);
-        let item_id = begin_filling(buffer.clone(), pipes.read);
-
-        let fd = fd_monitor().remove_item(item_id);
-        buffer.complete_and_take_buffer(fd);
+        let item_id = begin_filling(pipes.read);
+        let _fd = fd_monitor().remove_item(item_id);
+        // Allow some time for background thread to potentially hit the select issue
+        std::thread::sleep(Duration::from_millis(1));
     }
 }
