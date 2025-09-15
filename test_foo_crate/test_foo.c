@@ -13,11 +13,6 @@
 
 typedef struct {
     int fd;
-    int valid;
-} AutoCloseFd;
-
-typedef struct {
-    int fd;
 } FdMonitorItem;
 
 typedef struct {
