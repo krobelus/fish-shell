@@ -21,14 +21,14 @@ typedef struct {
 } SharedData;
 
 // Global shared data
-static SharedData g_shared_data = {0};
+static SharedData g_shared_data;
 static pthread_t g_background_thread;
 static int g_thread_started = 0;
 
 static void io_buffer_read_once(int fd) {
     assert(fd >= 0);
-    char bytes[4096];
-    ssize_t amt = read(fd, bytes, sizeof(bytes));
+    char data[1];
+    ssize_t amt = read(fd, data, 1);
     assert(amt >= 0);  // no error
     assert(amt == 0);  // no write
 }
@@ -47,6 +47,7 @@ static void *background_fd_monitor_run(void *_arg) {
         int item_count = 0;
         for (int i = 0; i < shared_data->item_count; i++) {
             int fd = shared_data->items[i].fd;
+            if (fd == -1) continue;
             if (fd >= 0) {
                 pollfds[nfds].fd = fd;
                 pollfds[nfds].events = POLLIN;
@@ -62,7 +63,7 @@ static void *background_fd_monitor_run(void *_arg) {
 
         // Call poll() - this is where the Cygwin bug occurs
         int ret = poll(pollfds, nfds, timeout_ms);
-        if (ret < 0 && errno != EINTR && errno != EBADF) {
+        if (ret == -1 && errno != EINTR && errno != EBADF) {
             perror("select");  // Using "select" to match original
             if (errno == 0) {
                 // Possible Cygwin bug.
@@ -81,7 +82,7 @@ static void *background_fd_monitor_run(void *_arg) {
                     FdMonitorItem *item = &shared_data->items[item_idx];
 
                     // Simulate the callback - read from fd and close it
-                    if (item->fd < 0) continue;  // TODO
+                    if (item->fd == -1) continue;  // TODO
                     assert(item->fd >= 0);
                     io_buffer_read_once(item->fd);
                     close(item->fd);
@@ -122,7 +123,7 @@ int fd_monitor_add(int fd) {
 int fd_monitor_remove_item(int item_id) {
     pthread_mutex_lock(&g_shared_data.mutex);
 
-    if (item_id < 0 || item_id >= g_shared_data.item_count) {
+    if (item_id == -1 || item_id >= g_shared_data.item_count) {
         pthread_mutex_unlock(&g_shared_data.mutex);
         return -1;
     }
