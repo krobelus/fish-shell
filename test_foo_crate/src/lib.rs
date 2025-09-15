@@ -487,23 +487,30 @@ impl Drop for FdMonitor {
 // === The test_foo function ===
 #[test]
 fn test_foo() {
-    // Minimal test to reproduce Cygwin select/poll errno issue
-    fn begin_filling(fd: OwnedFd) -> FdMonitorItemId {
+    use std::os::fd::IntoRawFd;
+
+    fn begin_filling(iobuffer: IoBuffer, fd: OwnedFd) -> FdMonitorItemId {
         let item_callback: Callback = Box::new(move |fd: &mut AutoCloseFd| {
-            // Just close the fd when it becomes readable
-            fd.close();
+            assert!(fd.as_raw_fd() >= 0, "Invalid fd");
+            let mut buf = iobuffer.0.lock().unwrap();
+            let ret = IoBuffer::read_once(fd.as_raw_fd(), &mut buf);
+            if ret == 0
+                || (ret < 0 && ![libc::EAGAIN, libc::EWOULDBLOCK].contains(&errno::errno().0))
+            {
+                fd.close();
+            }
         });
         let fd = AutoCloseFd::new(fd.into_raw_fd());
         fd_monitor().add(fd, item_callback)
     }
-    use std::os::fd::IntoRawFd;
 
     for _i in 0..100 {
         let pipes = make_autoclose_pipes().unwrap();
-        make_fd_nonblocking(pipes.read.as_raw_fd()).unwrap();  // This was in the original
-        let item_id = begin_filling(pipes.read);
-        let _fd = fd_monitor().remove_item(item_id);
-        // Allow some time for background thread to potentially hit the select issue
-        std::thread::sleep(Duration::from_millis(1));
+        make_fd_nonblocking(pipes.read.as_raw_fd()).unwrap();
+        let buffer = IoBuffer::new(/*buffer_limit=*/ 2);
+        let item_id = begin_filling(buffer.clone(), pipes.read);
+
+        let fd = fd_monitor().remove_item(item_id);
+        let _result = buffer.complete_and_take_buffer(fd);
     }
 }
