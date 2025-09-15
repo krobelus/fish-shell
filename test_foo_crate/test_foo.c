@@ -248,10 +248,9 @@ int fd_monitor_remove_item(int item_id) {
 int begin_filling(IoBuffer *buffer, int fd) { return fd_monitor_add(fd, buffer); }
 
 void test_foo() {
-    // Initialize
     pthread_mutex_init(&g_shared_data.mutex, NULL);
 
-    for (int i = 0; i < 100; i++) {
+    for (int i = 0; i < 1000; i++) {
         int read_fd, write_fd;
         if (make_autoclose_pipes(&read_fd, &write_fd) != 0) {
             perror_custom("pipe");
@@ -304,8 +303,6 @@ void test_foo() {
 }
 
 int main() {
-    printf("Running test_foo C version...\n");
     test_foo();
-    printf("Test completed.\n");
     return 0;
 }
