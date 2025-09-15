@@ -302,6 +302,7 @@ impl FdEventSignaller {
     }
 
     pub fn post(&self) {
+        return;
         let write_fd = self.write_fd();
         if write_fd < 0 {
             return; // Invalid fd, don't try to write
