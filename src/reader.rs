@@ -86,9 +86,10 @@ use crate::history::{
     SearchFlags, SearchType,
 };
 use crate::input::init_input;
+use crate::input_common::QueryResponse;
 use crate::input_common::{
     stop_query, CharEvent, CharInputStyle, CursorPositionQuery, ImplicitEvent, InputData,
-    QueryResponseEvent, ReadlineCmd, TerminalQuery,
+    QueryResult, ReadlineCmd, TerminalQuery,
 };
 use crate::io::IoChain;
 use crate::key::ViewportPosition;
@@ -2564,38 +2565,53 @@ impl<'a> Reader<'a> {
                     );
                 }
             },
-            CharEvent::QueryResponse(query_response) => {
-                match query_response {
-                    QueryResponseEvent::PrimaryDeviceAttributeResponse => {
-                        if *self.blocking_query() != Some(TerminalQuery::PrimaryDeviceAttribute) {
-                            // Rogue reply.
-                            return ControlFlow::Continue(());
-                        }
+            CharEvent::QueryResult(query_result) => {
+                let maybe_query = self.blocking_query();
+                let query = &maybe_query;
+                use QueryResponse::*;
+                use QueryResult::*;
+                let query = match (&**query, query_result) {
+                    (
+                        Some(TerminalQuery::PrimaryDeviceAttribute),
+                        Response(PrimaryDeviceAttribute) | Timeout,
+                    ) => {
                         if get_kitty_keyboard_capability() == Capability::Unknown {
                             set_kitty_keyboard_capability(
                                 reader_save_screen_state,
                                 Capability::NotSupported,
                             );
                         }
+                        maybe_query
                     }
-                    QueryResponseEvent::CursorPositionResponse(cursor_pos) => {
-                        let cursor_pos_query = match &*self.blocking_query() {
-                            Some(TerminalQuery::CursorPosition(cursor_pos_query)) => {
-                                cursor_pos_query.clone()
-                            }
-                            _ => return ControlFlow::Continue(()), // Rogue reply.
+                    (
+                        Some(TerminalQuery::CursorPosition(cursor_pos_query)),
+                        query_result @ (Response(CursorPosition(_)) | Timeout),
+                    ) => {
+                        let cursor_pos = match query_result {
+                            Timeout => None,
+                            Response(CursorPosition(cursor_pos)) => Some(cursor_pos),
+                            _ => panic!(),
                         };
+                        let cursor_pos_query = cursor_pos_query.clone();
+                        drop(maybe_query);
                         match cursor_pos_query {
                             CursorPositionQuery::MouseLeft(click_position) => {
-                                self.mouse_left_click(cursor_pos, click_position);
+                                if let Some(cursor_pos) = cursor_pos {
+                                    self.mouse_left_click(cursor_pos, click_position);
+                                }
                             }
                             CursorPositionQuery::ScrollbackPush => {
-                                self.screen.push_to_scrollback(cursor_pos.y);
+                                if let Some(cursor_pos) = cursor_pos {
+                                    self.screen.push_to_scrollback(cursor_pos.y);
+                                }
                             }
-                        }
+                        };
+                        self.blocking_query()
                     }
-                }
-                let ok = stop_query(self.blocking_query());
+                    // Rogue reply
+                    (_, _) => return ControlFlow::Continue(()),
+                };
+                let ok = stop_query(query);
                 assert!(ok);
             }
         }

@@ -1,10 +1,11 @@
 use crate::common::{
     fish_reserved_codepoint, is_windows_subsystem_for_linux, read_blocked, shell_modes,
-    str2wcstring, WSL,
+    str2wcstring, PROGRAM_NAME, WSL,
 };
 use crate::env::{EnvStack, Environment};
 use crate::fd_readable_set::{FdReadableSet, Timeout};
 use crate::flog::{FloggableDebug, FloggableDisplay, FLOG};
+use crate::global_safety::RelaxedAtomicBool;
 use crate::key::{
     self, alt, canonicalize_control_char, canonicalize_keyed_control_char, char_to_symbol,
     function_key, shift, Key, Modifiers, ViewportPosition,
@@ -411,9 +412,15 @@ pub enum ImplicitEvent {
 }
 
 #[derive(Debug, Clone)]
-pub enum QueryResponseEvent {
-    PrimaryDeviceAttributeResponse,
-    CursorPositionResponse(ViewportPosition),
+pub enum QueryResponse {
+    PrimaryDeviceAttribute,
+    CursorPosition(ViewportPosition),
+}
+
+#[derive(Debug, Clone)]
+pub enum QueryResult {
+    Response(QueryResponse),
+    Timeout,
 }
 
 #[derive(Debug, Clone)]
@@ -430,7 +437,7 @@ pub enum CharEvent {
     /// Any event that has no user-visible representation.
     Implicit(ImplicitEvent),
 
-    QueryResponse(QueryResponseEvent),
+    QueryResult(QueryResult),
 }
 impl FloggableDebug for CharEvent {}
 
@@ -532,6 +539,8 @@ enum InputEventTrigger {
 
     // Our ioport reported a change, so service main thread requests.
     IOPortNotified,
+
+    TimeoutElapsed,
 }
 
 fn readb(in_fd: RawFd) -> Option<u8> {
@@ -547,7 +556,7 @@ fn readb(in_fd: RawFd) -> Option<u8> {
     Some(c)
 }
 
-fn next_input_event(in_fd: RawFd) -> InputEventTrigger {
+fn next_input_event(in_fd: RawFd, timeout: Timeout) -> InputEventTrigger {
     let mut fdset = FdReadableSet::new();
     loop {
         fdset.clear();
@@ -565,7 +574,7 @@ fn next_input_event(in_fd: RawFd) -> InputEventTrigger {
         }
 
         // Here's where we call select().
-        let select_res = fdset.check_readable(Timeout::Forever);
+        let select_res = fdset.check_readable(timeout);
         if select_res < 0 {
             let err = errno::errno().0;
             if err == libc::EINTR || err == libc::EAGAIN {
@@ -575,6 +584,10 @@ fn next_input_event(in_fd: RawFd) -> InputEventTrigger {
                 // Some fd was invalid, so probably the tty has been closed.
                 return InputEventTrigger::Eof;
             }
+        }
+        if select_res == 0 {
+            assert!(!matches!(timeout, Timeout::Forever));
+            return InputEventTrigger::TimeoutElapsed;
         }
 
         // select() did not return an error, so we may have a readable fd.
@@ -775,7 +788,7 @@ pub trait InputEventQueuer {
         if self.is_blocked_querying() {
             use ImplicitEvent::*;
             match self.get_input_data().queue.front()? {
-                CharEvent::QueryResponse(_) | CharEvent::Implicit(CheckExit | Eof) => {}
+                CharEvent::QueryResult(_) | CharEvent::Implicit(CheckExit | Eof) => {}
                 CharEvent::Key(_)
                 | CharEvent::Readline(_)
                 | CharEvent::Command(_)
@@ -805,23 +818,36 @@ pub trait InputEventQueuer {
                 return mevt;
             }
 
-            match next_input_event(self.get_in_fd()) {
+            const INITIAL_QUERY_TIMEOUT_SECONDS: u64 = 2;
+            static ABANDON_WAITING_FOR_QUERIES: RelaxedAtomicBool = RelaxedAtomicBool::new(false);
+
+            match next_input_event(
+                self.get_in_fd(),
+                if self.is_blocked_querying() {
+                    Timeout::Duration(if ABANDON_WAITING_FOR_QUERIES.load() {
+                        // This is somewhat arbitrary. It should be small enough so the user never
+                        // notices a delay if we ever get into this state on a supported terminal,
+                        // which can happen after extreme (network) latency exceeds our initial timeout.
+                        Duration::from_millis(30)
+                    } else {
+                        Duration::from_secs(INITIAL_QUERY_TIMEOUT_SECONDS)
+                    })
+                } else {
+                    Timeout::Forever
+                },
+            ) {
                 InputEventTrigger::Eof => {
                     return CharEvent::Implicit(ImplicitEvent::Eof);
                 }
-
                 InputEventTrigger::Interrupted => {
                     self.select_interrupted();
                 }
-
                 InputEventTrigger::UvarNotified => {
                     self.uvar_change_notified();
                 }
-
                 InputEventTrigger::IOPortNotified => {
                     self.ioport_notified();
                 }
-
                 InputEventTrigger::Byte(read_byte) => {
                     let mut have_escape_prefix = false;
                     let mut buffer = vec![read_byte];
@@ -847,10 +873,12 @@ pub trait InputEventQueuer {
                     let mut i = 0;
                     let ok = loop {
                         if i == buffer.len() {
-                            buffer.push(match next_input_event(self.get_in_fd()) {
-                                InputEventTrigger::Byte(b) => b,
-                                _ => 0,
-                            });
+                            buffer.push(
+                                match next_input_event(self.get_in_fd(), Timeout::Forever) {
+                                    InputEventTrigger::Byte(b) => b,
+                                    _ => 0,
+                                },
+                            );
                         }
                         match decode_input_byte(
                             &mut seq,
@@ -911,9 +939,9 @@ pub trait InputEventQueuer {
                             })
                         {
                             FLOG!(
-                                reader,
-                                "Received interrupt key, giving up waiting for response from terminal"
-                            );
+                                            reader,
+                                            "Received interrupt key, giving up waiting for response from terminal"
+                                        );
                             let ok = stop_query(self.blocking_query());
                             assert!(ok);
                             self.get_input_data_mut().queue.clear();
@@ -922,6 +950,27 @@ pub trait InputEventQueuer {
                     }
                     extra.map(|extra| self.insert_front(extra));
                     return key_evt;
+                }
+                InputEventTrigger::TimeoutElapsed => {
+                    if !ABANDON_WAITING_FOR_QUERIES.load() {
+                        FLOG!(
+                            warning,
+                            wgettext_fmt!(
+                                "%s could not read %s response after waiting for %d seconds. \
+                                 This is often due to a missing feature in your terminal. \
+                                 See 'help terminal-compatibility' or 'man fish-terminal-compatibility'. \
+                                 This process will no longer wait for outstanding queries.",
+                                 PROGRAM_NAME.get().unwrap(),
+                                 match self.blocking_query().as_ref().unwrap() {
+                                     TerminalQuery::PrimaryDeviceAttribute => "primary device attribute",
+                                     TerminalQuery::CursorPosition(_) => "cursor position report",
+                                 },
+                                 INITIAL_QUERY_TIMEOUT_SECONDS,
+                            ),
+                        );
+                        ABANDON_WAITING_FOR_QUERIES.store(true);
+                    }
+                    return CharEvent::QueryResult(QueryResult::Timeout);
                 }
             }
         }
@@ -1164,9 +1213,9 @@ pub trait InputEventQueuer {
                 };
                 FLOG!(reader, "Received cursor position report y:", y, "x:", x);
                 let cursor_pos = ViewportPosition { x, y };
-                self.push_front(CharEvent::QueryResponse(
-                    QueryResponseEvent::CursorPositionResponse(cursor_pos),
-                ));
+                self.push_front(CharEvent::QueryResult(QueryResult::Response(
+                    QueryResponse::CursorPosition(cursor_pos),
+                )));
                 return None;
             }
             b'S' => masked_key(function_key(4)),
@@ -1217,9 +1266,9 @@ pub trait InputEventQueuer {
                 _ => return None,
             },
             b'c' if private_mode == Some(b'?') => {
-                self.push_front(CharEvent::QueryResponse(
-                    QueryResponseEvent::PrimaryDeviceAttributeResponse,
-                ));
+                self.push_front(CharEvent::QueryResult(QueryResult::Response(
+                    QueryResponse::PrimaryDeviceAttribute,
+                )));
                 return None;
             }
             b'u' => {
