@@ -24,7 +24,7 @@ previous_version=$(
     '
 )
 minor_version=${version%.*}
-previous_minor_version=${minor_version%.*}
+previous_minor_version=${previous_version%.*}
 {
     sed -n 1,2p <"$workspace_root/CHANGELOG.rst"
 
