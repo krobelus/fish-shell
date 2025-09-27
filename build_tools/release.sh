@@ -54,9 +54,6 @@ integration_branch=$(
 [ -n "$integration_branch" ] ||
     git merge-base --is-ancestor $remote/master HEAD
 
-release_flow=.github/workflows/release.yml
-git diff --exit-code -- :/$release_flow $remote/master:$release_flow
-
 sed -n 1p CHANGELOG.rst | grep -q '^fish .*(released .*)$'
 sed -n 2p CHANGELOG.rst | grep -q '^===*$'
 
@@ -82,11 +79,17 @@ git tag --annotate --message="Release $version" $version
 
 git push $remote $version
 
+tmpref=refs/heads/fish-ci/$(date +%Y-%m-%dT%H-%M-%S)
+git push $remote "$version^{commit}:$tmpref"
+
+FISH_TIMEOUT=
 gh() {
-    command gh --repo "$repository_owner/fish-shell" "$@"
+    command ${FISH_TIMEOUT:+timeout $FISH_TIMEOUT} \
+        gh --repo "$repository_owner/fish-shell" "$@"
 }
 
-gh workflow run release.yml --raw-field "version=$version"
+gh workflow run release.yml --ref="${tmpref#refs/heads}" \
+    --raw-field="version=$version"
 
 run_id=
 while [ -z "$run_id" ] && sleep 5
@@ -108,7 +111,7 @@ while ! \
     gh release download "$version" --dir="$tmpdir" \
         --pattern="fish-$version.tar.xz"
 do
-    timeout 30 gh run watch "$run_id" ||:
+    FISH_TIMEOUT=30 gh run watch "$run_id" ||:
 done
 actual_tag_oid=$(git ls-remote "$remote" |
     awk '$2 == "refs/tags/'"$version"'" { print $1 }')
@@ -143,8 +146,6 @@ rm -rf "$tmpdir"
     " | sed 's,^\s*| \?,,')"
 )
 
-
-
 # Approve macos-codesign
 # TODO what if current user can't approve?
 sleep 5
@@ -178,6 +179,8 @@ while {
 do
     sleep 20
 done
+
+git push $remote ":$tmpref"
 
 (
     cd "$fish_site"

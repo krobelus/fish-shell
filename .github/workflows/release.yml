@@ -99,6 +99,10 @@ jobs:
           name: Static builds for Linux
           path: fish-${{ inputs.version }}-linux-*.tar.xz
           if-no-files-found: error
+      - name: Setup tmate session
+        if: ${{ failure() }}
+        uses: mxschmitt/action-tmate@v3
+
 
   create-draft-release:
     needs:
@@ -129,6 +133,9 @@ jobs:
           files: |
             /tmp/artifacts/fish-${{ inputs.version }}.tar.xz
             /tmp/artifacts/fish-${{ inputs.version }}-linux-*.tar.xz
+      - name: Setup tmate session
+        if: ${{ failure() }}
+        uses: mxschmitt/action-tmate@v3
 
   packages-for-macos:
     needs: [is-release-tag, create-draft-release]
