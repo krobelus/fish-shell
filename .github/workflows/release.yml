@@ -49,6 +49,7 @@ jobs:
           mkdir /tmp/fish-built
           FISH_ARTEFACT_PATH=/tmp/fish-built ./build_tools/make_tarball.sh
           relnotes=/tmp/fish-built/release-notes.md
+          git fetch --tags # Need the previous tag for the release announcement.
           sh -x ./build_tools/release-notes.sh >"$relnotes"
           # Delete title
           sed -n 1p "$relnotes" | grep -q "^## fish .*"
@@ -62,6 +63,9 @@ jobs:
             /tmp/fish-built/fish-${{ inputs.version }}.tar.xz
             /tmp/fish-built/release-notes.md
           if-no-files-found: error
+      - name: Setup tmate session
+        if: ${{ failure() }}
+        uses: mxschmitt/action-tmate@v3
 
   packages-for-linux:
     needs: [is-release-tag]
@@ -99,6 +103,7 @@ jobs:
           name: Static builds for Linux
           path: fish-${{ inputs.version }}-linux-*.tar.xz
           if-no-files-found: error
+
 
   create-draft-release:
     needs:
