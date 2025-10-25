@@ -1183,9 +1183,8 @@ fn format_history_record(
         if !unsafe { libc::localtime_r(&seconds, timestamp.as_mut_ptr()).is_null() } {
             const max_tstamp_length: usize = 100;
             let mut timestamp_str = [0_u8; max_tstamp_length];
-            use libc::strftime;
             if unsafe {
-                strftime(
+                libc::strftime(
                     &mut timestamp_str[0] as *mut u8 as *mut libc::c_char,
                     max_tstamp_length,
                     show_time_format.as_ptr(),
