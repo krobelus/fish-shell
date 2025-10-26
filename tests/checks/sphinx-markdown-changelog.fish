@@ -9,7 +9,8 @@ end
 
 $workspace_root/build_tools/release-notes.sh -q >?relnotes.md
 or {
-    echo "Failed to build Markdown release notes."
+    echo "Failed to build Markdown release notes, retrying with tracing"
+    sh -x $workspace_root/build_tools/release-notes.sh -q
     return
 }
 sed -n 1p relnotes.md | grep -q '^## fish \S* (released .*)'
