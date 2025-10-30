@@ -373,6 +373,11 @@ pub fn wrename(old_name: &wstr, new_name: &wstr) -> libc::c_int {
     unsafe { libc::rename(old_narrow.as_ptr(), new_narrow.as_ptr()) }
 }
 
+/// Writes a newline to the provided file descriptor, ignoring errors.
+pub fn write_newline_to_fd(fd: RawFd) {
+    let _ = crate::wutil::write_to_fd(b"\n", fd);
+}
+
 /// Writes the input bytes to the provided file descriptor, retrying on interrupts.
 pub fn write_to_fd(input: &[u8], fd: RawFd) -> std::io::Result<()> {
     let mut written = 0;
