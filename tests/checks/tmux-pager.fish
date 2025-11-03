@@ -1,6 +1,5 @@
 #RUN: %fish %s
 #REQUIRES: command -v tmux
-#REQUIRES: test -z "$CI"
 
 isolated-tmux-start -C '
     history append ": $(string repeat $COLUMNS A)"
@@ -9,8 +8,8 @@ isolated-tmux-start -C '
 
 # Check that completions don't break from truncated autosuggestion
 isolated-tmux send-keys : Space Tab Tab
-tmux-sleep
-isolated-tmux capture-pane -p
+t-sync
+t-capture
 # CHECK: prompt 0> : AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA…
 # CHECK: 1    135  269  403  537  671
 # CHECK: 2    136  270  404  538  672
@@ -25,8 +24,8 @@ isolated-tmux capture-pane -p
 # Check that completions don't break than called on empty line
 isolated-tmux send-keys C-u 'set fish_autosuggestion_enabled 0; function fish_prompt; string repeat (math $COLUMNS - 2) 0; end' Enter
 isolated-tmux send-keys C-l : Space Tab Tab
-tmux-sleep
-isolated-tmux capture-pane -p
+t-sync
+t-capture
 # CHECK: 000000000000000000000000000000000000000000000000000000000000000000000000000000:
 # CHECK:
 # CHECK: 1    135  269  403  537  671

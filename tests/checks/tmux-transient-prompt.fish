@@ -10,12 +10,12 @@ isolated-tmux-start -C '
             printf "> full prompt > "
         end
     end
-    bind ctrl-j "set transient true; commandline -f repaint execute"
+    bind ctrl-j "set transient true" repaint execute
 '
 
 isolated-tmux send-keys 'echo foo' C-j
-tmux-sleep
-isolated-tmux capture-pane -p
+t-sync
+t-capture
 # CHECK: > echo foo
 # CHECK: foo
 # CHECK: > full prompt >
@@ -27,10 +27,9 @@ isolated-tmux send-keys C-u '
         printf "\$ "
     end
 '
-tmux-sleep
 isolated-tmux send-keys C-l Enter Enter
-tmux-sleep
-isolated-tmux capture-pane -p
+t-sync
+t-capture
 # CHECK: $
 # CHECK: $
 # CHECK: $
@@ -45,10 +44,9 @@ isolated-tmux send-keys C-u C-l '
         end
     end
 '
-tmux-sleep
 isolated-tmux send-keys C-l Enter
-tmux-sleep
-isolated-tmux capture-pane -p
+t-sync
+t-capture
 # CHECK: final line1
 # CHECK: final line2
 # CHECK: transient line1
@@ -66,10 +64,9 @@ isolated-tmux send-keys C-u C-l '
         end
     end
 '
-tmux-sleep
 isolated-tmux send-keys C-l 'echo foo' Enter
-tmux-sleep
-isolated-tmux capture-pane -p
+t-sync
+t-capture
 # CHECK: 2> echo foo
 # CHECK: foo
 # CHECK: transient prompt line
@@ -80,8 +77,8 @@ isolated-tmux capture-pane -p
 isolated-tmux send-keys C-u C-l
 isolated-tmux send-keys 'echo foo \\' Enter
 isolated-tmux send-keys bar Enter
-tmux-sleep
-isolated-tmux capture-pane -p
+t-sync
+t-capture
 # CHECK: 2> echo foo \
 # CHECK:        bar
 # CHECK: foo bar

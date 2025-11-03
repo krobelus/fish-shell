@@ -3,6 +3,6 @@
 
 isolated-tmux-start
 isolated-tmux send-keys 'bind ctrl-g "commandline -f scrollback-push scrollback-push clear-screen"' Enter C-g
-tmux-sleep
-isolated-tmux capture-pane -p
+t-sync
+t-capture
 # CHECK: prompt 1>

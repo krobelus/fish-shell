@@ -15,15 +15,15 @@ isolated-tmux-start
 isolated-tmux resize-window -x 500
 
 isolated-tmux send-keys "BROWSER=true fish_config" Enter
-sleep-until 'isolated-tmux capture-pane -p | grep ENTER'
-isolated-tmux capture-pane -p
+t-sleep-until 't-capture | grep ENTER'
+t-capture
 # CHECK: prompt 0> BROWSER=true fish_config
 # CHECK: Web config started at file://{{.*}}.html
 # CHECK: If that doesn't work, try opening http://localhost:{{(\d{4})}}/{{\w+}}/
 # CHECK: Hit ENTER to stop.
 
 # Extract the URL from the output
-set -l base_url (isolated-tmux capture-pane -p | string match -r 'http://localhost:\d{4}/\w+/$')
+set -l base_url (t-capture | string match -r 'http://localhost:\d{4}/\w+/$')
 or exit
 set -l host_port (dirname $base_url)
 
@@ -45,7 +45,7 @@ switch "$(wget --version 2>&1)"
 end
 or echo "Unexpected exit code ($last_status) from wget"
 
-isolated-tmux capture-pane -p -S 4
+t-capture -S 4
 # CHECK: {{.*}} code 403, message Forbidden, path /invalid_auth/
 
 # Check a good URL
@@ -53,7 +53,7 @@ set -l workspace_root (path resolve -- (status dirname)/../../)
 diff -q "$workspace_root/share/tools/web_config/index.html" (wget -q -O - $base_url 2>/dev/null | psub -f)
 
 isolated-tmux send-keys Enter
-tmux-sleep
-isolated-tmux capture-pane -p -S 5
+t-sync
+t-capture -S 5
 # CHECK: Shutting down.
 # CHECK: prompt 1>

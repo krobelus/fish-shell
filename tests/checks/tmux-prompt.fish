@@ -15,20 +15,19 @@ isolated-tmux-start -C '
     bind ctrl-g token-info
 '
 
-isolated-tmux capture-pane -p
+t-capture
 # CHECK: prompt 0> <status=0> <>
 
-set -q CI && set sleep sleep 10
 set -U prompt_var changed
-tmux-sleep
+t-sync
 isolated-tmux send-keys Enter
 # CHECK: prompt 0> <status=0> <changed>
 
 isolated-tmux send-keys echo Space 123
-tmux-sleep
+t-sync
 isolated-tmux send-keys C-g
-tmux-sleep
-isolated-tmux capture-pane -p
+t-sync
+t-capture
 # CHECK: prompt 0> <status=0> <> echo 123
 # CHECK: current token is <123>
 # CHECK: prompt 0> <status=0> <> echo 123
@@ -38,8 +37,8 @@ function fish_prompt
     printf "full line prompt\nhidden<----------------------------------------------two-last-characters-rendered->!!"
 end' Enter C-l
 isolated-tmux send-keys 'test "' Enter 'indent"'
-tmux-sleep
-isolated-tmux capture-pane -p
+t-sync
+t-capture
 # CHECK: full line prompt
 # CHECK: …<----------------------------------------------two-last-characters-rendered->!!
 # CHECK: test "
@@ -50,8 +49,8 @@ isolated-tmux send-keys C-c '
         string repeat (math $COLUMNS) x
     end
 ' C-l 'echo hello'
-tmux-sleep
-isolated-tmux capture-pane -p
+t-sync
+t-capture
 # CHECK: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 # CHECK: echo hello
 
@@ -63,8 +62,8 @@ isolated-tmux send-keys C-c '
         echo test
     end
 ' Enter
-tmux-sleep
-isolated-tmux capture-pane -p -S -11
+t-sync
+t-capture -S -11
 # CHECK: 1
 # CHECK: 2
 # CHECK: 3

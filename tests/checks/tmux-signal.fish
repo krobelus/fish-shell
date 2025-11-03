@@ -10,8 +10,8 @@ isolated-tmux-start -C '
 '
 
 isolated-tmux send-keys 'kill -SIGUSR1 $fish_pid' Enter
-tmux-sleep
-isolated-tmux capture-pane -p
+t-sync
+t-capture
 # CHECK: prompt 0> kill -SIGUSR1 $fish_pid
 # CHECK: Got SIGUSR1
 # CHECK: prompt 1>

@@ -10,8 +10,8 @@ isolated-tmux send-keys \
     "echo hello"
 sleep 0.6
 isolated-tmux send-keys Space world
-sleep 0.1
-isolated-tmux capture-pane -p
+t-sync
+t-capture
 # CHECK: prompt 0> sleep 0.5 &
 # CHECK: prompt 0> echo hello
 # CHECK: fish: Job 1, 'sleep 0.5 &' has ended
@@ -19,6 +19,6 @@ isolated-tmux capture-pane -p
 # CHECK: {{.*}} world
 
 isolated-tmux send-keys C-u C-l "sleep 3 | cat &" Enter "bg %1" Enter
-tmux-sleep
-isolated-tmux capture-pane -p | string match '*to background*'
+t-sync
+t-capture | string match '*to background*'
 # CHECK: Send job 1 'sleep 3 | cat &' to background

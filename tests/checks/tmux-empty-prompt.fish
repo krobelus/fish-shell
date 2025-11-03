@@ -13,10 +13,10 @@ isolated-tmux-start -C '
 '
 
 isolated-tmux send-keys M-g C-l Enter
-tmux-sleep
+t-sync
 isolated-tmux send-keys C-g Enter
-tmux-sleep
-isolated-tmux capture-pane -p | string replace -r '$' '+'
+t-sync
+t-capture | string replace -r '$' '+'
 #CHECK: +
 #CHECK: right-prompt+
 #CHECK: right-prompt+
@@ -29,8 +29,8 @@ isolated-tmux capture-pane -p | string replace -r '$' '+'
 #CHECK: +
 
 isolated-tmux send-keys M-g Tab Tab
-tmux-sleep
-isolated-tmux capture-pane -p | string replace -r '$' '+'
+t-sync
+t-capture | string replace -r '$' '+'
 #CHECK: +
 #CHECK: {{.*}}+
 #CHECK: {{.*}}+
@@ -47,14 +47,12 @@ isolated-tmux send-keys '
         echo left-prompt\n
     end
 '
-tmux-sleep
+t-sync
 isolated-tmux send-keys C-l Enter
-tmux-sleep
+t-sync
 isolated-tmux send-keys C-g Enter
-tmux-sleep
-tmux-sleep
-tmux-sleep
-isolated-tmux capture-pane -p | string replace -r '$' '+'
+t-sync
+t-capture | string replace -r '$' '+'
 #CHECK: left-prompt+
 #CHECK: +
 #CHECK: left-prompt+
@@ -67,8 +65,8 @@ isolated-tmux capture-pane -p | string replace -r '$' '+'
 #CHECK: +
 
 isolated-tmux send-keys M-g Tab Tab
-tmux-sleep
-isolated-tmux capture-pane -p | string replace -r '$' '+'
+t-sync
+t-capture | string replace -r '$' '+'
 #CHECK: left-prompt+
 #CHECK: +
 #CHECK: {{.*}}+

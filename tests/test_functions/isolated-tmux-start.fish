@@ -21,27 +21,19 @@ function isolated-tmux-start --wraps fish
         rm -r $tmpdir
     end
 
-    function tmux-sleep
-        set -q CI && sleep 1
-        or sleep 0.3
-    end
-
-    function sleep-until
-        set -l cmd $argv[1]
-        set -l i 0
-        while [ $i -lt 100 ] && not eval "$cmd" >/dev/null
-            tmux-sleep
-            set i (math $i + 1)
-        end
-        if [ $i -eq 100 ]
-            printf '%s\n' "timeout waiting for $cmd" >&2
-            exit 1
-        end
-    end
+    mkfifo .fifo # for open-fifo
 
     set -l fish (status fish-path)
     set -l size -x 80 -y 10
     isolated-tmux new-session $size -d $fish -C '
+        function semaphore-post
+            open-fifo ">"
+            or exit
+        end
+         # HACK Vi mode might not be loaded yet.
+        for mode in (bind --list-modes) insert replace replace_one visal
+            bind -M $mode \e\]fish-semaphore-post\a semaphore-post
+        end
         # This is similar to "tests/interactive.config".
         function fish_greeting; end
         function fish_prompt; printf "prompt $status_generation> "; end
@@ -58,11 +50,43 @@ function isolated-tmux-start --wraps fish
     isolated-tmux resize-window $size
 
     # Loop a bit, until we get an initial prompt.
-    for i in (seq 50)
-        if test -n "$(isolated-tmux capture-pane -p)"
-            return
-        end
-        sleep .2
+    t-sleep-until 'test -n "$(t-capture)" # initial prompt'
+end
+
+function t-sync
+    isolated-tmux send-keys \e\]fish-semaphore-post\a
+    open-fifo "<" # semaphore wait
+    or exit
+end
+
+function t-send --wraps 'tmux send-keys'
+    isolated-tmux send-keys $argv
+end
+
+function t-capture --wraps 'tmux capture-pane -p'
+    isolated-tmux capture-pane -p $argv |
+        # N.B. littlecheck allows empty lines.
+        # Let's hope this doesn't cause too much chaos.
+        string replace -a '^[]fish-semaphore-post^G⏎' '' |
+        string replace -a '^[]fish-semaphore-post^G' ''
+end
+
+function t-pause-after-legacy-escape
+    # Disambiguate legacy escape from alt
+    sleep .1
+end
+
+function t-sleep-until
+    set -l cmd $argv[1]
+    set -l i 0
+    set -l max_attempts 20
+    set -l interval (math (long-timeout-in-seconds) / $max_attempts)
+    while [ $i -lt $max_attempts ] && not eval "$cmd" >/dev/null
+        sleep $interval
+        set i (math $i + 1)
     end
-    echo "error: isolated-tmux-start timed out waiting for non-empty first prompt" >&2
+    if [ $i -eq $max_attempts ]
+        printf '%s\n' "timeout waiting for $cmd" >&2
+        exit 1
+    end
 end

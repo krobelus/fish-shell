@@ -7,8 +7,8 @@ isolated-tmux-start -C '
 '
 
 isolated-tmux send-keys C-g Enter
-tmux-sleep
-isolated-tmux capture-pane -p | awk 'NR <= 4 {print NR ":" $0}'
+t-sync
+t-capture | awk 'NR <= 4 {print NR ":" $0}'
 
 # CHECK: 1:$ echo 0000000000000000000000000000000000000000000000000000000000000000000000000
 # CHECK: 2:0000000000000000000000000000000000000000000000000000000000000000000000000
