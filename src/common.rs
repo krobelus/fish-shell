@@ -13,7 +13,7 @@ use crate::parse_util::parse_util_escape_string_with_quote;
 use crate::terminal::Output;
 use crate::termsize::Termsize;
 use crate::wchar::{decode_byte_from_char, encode_byte_to_char, prelude::*};
-use crate::wcstringutil::str2bytes_callback;
+use crate::wcstringutil::{ToChars, str2bytes_callback};
 use crate::wildcard::{ANY_CHAR, ANY_STRING, ANY_STRING_RECURSIVE};
 use crate::wutil::fish_iswalnum;
 use bitflags::bitflags;
@@ -1171,11 +1171,7 @@ pub(crate) fn charptr2wcstring(input: *const libc::c_char) -> WString {
 ///
 /// This function decodes illegal character sequences in a reversible way using the private use
 /// area.
-pub fn wcs2bytes(input: &wstr) -> Vec<u8> {
-    if input.is_empty() {
-        return vec![];
-    }
-
+pub fn wcs2bytes(input: impl ToChars) -> Vec<u8> {
     let mut result = vec![];
     wcs2bytes_appending(&mut result, input);
     result
@@ -1220,8 +1216,7 @@ pub fn wcs2zstring(input: &wstr) -> CString {
 }
 
 /// Like [`wcs2bytes`], but appends to `output` instead of returning a new string.
-pub fn wcs2bytes_appending(output: &mut Vec<u8>, input: &wstr) {
-    output.reserve(input.len());
+pub fn wcs2bytes_appending(output: &mut Vec<u8>, input: impl ToChars) {
     str2bytes_callback(input, |buff| {
         output.extend_from_slice(buff);
         Ok(())

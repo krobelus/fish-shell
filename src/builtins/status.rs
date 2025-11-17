@@ -530,7 +530,7 @@ pub fn status(parser: &Parser, streams: &mut IoStreams, args: &mut [&wstr]) -> B
                     use crate::util::wcsfilecmp_glob;
 
                     let mut paths = vec![];
-                    let arg = crate::common::wcs2bytes(args.first().unwrap_or(&L!("")));
+                    let arg = crate::common::wcs2bytes(*args.first().unwrap_or(&L!("")));
                     let arg = std::str::from_utf8(&arg).unwrap();
                     let embedded_files = crate::autoload::Asset::iter().chain(Docs::iter());
                     #[cfg(using_cmake)]

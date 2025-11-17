@@ -71,7 +71,7 @@ impl<'args> StringSubCommand<'args> for Join<'args> {
                 }
 
                 if nargs > 0 {
-                    streams.out.append(sep);
+                    streams.out.append(*sep);
                 }
 
                 streams.out.append(arg);

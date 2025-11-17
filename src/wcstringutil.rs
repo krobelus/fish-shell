@@ -297,36 +297,55 @@ pub fn string_fuzzy_match_string(
 }
 
 pub trait ToChars {
-    fn to_chars(&self) -> impl Iterator<Item = char>;
+    fn to_chars(&mut self) -> impl Iterator<Item = char>;
 }
 
 impl ToChars for &str {
-    fn to_chars(&self) -> impl Iterator<Item = char> {
+    fn to_chars(&mut self) -> impl Iterator<Item = char> {
         self.chars()
     }
 }
 
 impl ToChars for &String {
-    fn to_chars(&self) -> impl Iterator<Item = char> {
+    fn to_chars(&mut self) -> impl Iterator<Item = char> {
         self.chars()
     }
 }
 
 impl ToChars for std::borrow::Cow<'_, str> {
-    fn to_chars(&self) -> impl Iterator<Item = char> {
+    fn to_chars(&mut self) -> impl Iterator<Item = char> {
+        self.chars()
+    }
+}
+
+impl ToChars for std::borrow::Cow<'_, wstr> {
+    fn to_chars(&mut self) -> impl Iterator<Item = char> {
         self.chars()
     }
 }
 
 impl ToChars for &wstr {
-    fn to_chars(&self) -> impl Iterator<Item = char> {
+    fn to_chars(&mut self) -> impl Iterator<Item = char> {
         self.chars()
     }
 }
 
 impl ToChars for &WString {
-    fn to_chars(&self) -> impl Iterator<Item = char> {
+    fn to_chars(&mut self) -> impl Iterator<Item = char> {
         self.chars()
+    }
+}
+
+impl ToChars for WString {
+    fn to_chars(&mut self) -> impl Iterator<Item = char> {
+        std::mem::take(self).into_char_vec().into_iter()
+    }
+}
+
+impl ToChars for String {
+    fn to_chars(&mut self) -> impl Iterator<Item = char> {
+        // TODO(MSRV) into_chars()
+        self.chars().collect::<Vec<_>>().into_iter()
     }
 }
 
@@ -341,7 +360,7 @@ impl ToChars for &WString {
 // return `Ok(())`, which would require type annotations if this function was generic in the error
 // type.
 pub fn str2bytes_callback(
-    input: impl ToChars,
+    mut input: impl ToChars,
     mut func: impl FnMut(&[u8]) -> Result<(), std::io::Error>,
 ) -> Result<(), std::io::Error> {
     // A `char` represents an Unicode scalar value, which takes up at most 4 bytes when encoded in UTF-8.

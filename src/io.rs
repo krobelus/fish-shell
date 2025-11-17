@@ -11,6 +11,7 @@ use crate::proc::JobGroupRef;
 use crate::redirection::{RedirectionMode, RedirectionSpecList};
 use crate::terminal::Output;
 use crate::wchar::prelude::*;
+use crate::wcstringutil::ToChars;
 use crate::wutil::{perror, perror_io, unescape_and_write_to_fd, wdirname, wstat};
 use errno::Errno;
 use libc::{EAGAIN, EINTR, ENOENT, ENOTDIR, EWOULDBLOCK, STDOUT_FILENO};
@@ -671,9 +672,8 @@ impl OutputStream {
         }
     }
 
-    /// Append a &wstr or WString.
-    pub fn append<Str: AsRef<wstr>>(&mut self, s: Str) -> bool {
-        let s = &s.as_ref();
+    /// Append the given characters.
+    pub fn append(&mut self, s: impl ToChars) -> bool {
         match self {
             OutputStream::Null => true,
             OutputStream::Fd(stream) => stream.append(s),
@@ -766,7 +766,7 @@ impl FdOutputStream {
         FdOutputStream { fd, errored: false }
     }
 
-    fn append(&mut self, s: &wstr) -> bool {
+    fn append(&mut self, s: impl ToChars) -> bool {
         if self.errored {
             return false;
         }
@@ -798,8 +798,9 @@ impl StringOutputStream {
     pub fn new() -> Self {
         Default::default()
     }
-    fn append(&mut self, s: &wstr) -> bool {
-        self.contents.push_utfstr(s);
+    fn append(&mut self, mut s: impl ToChars) -> bool {
+        // TODO optimize
+        self.contents.extend(s.to_chars());
         true
     }
     /// Return the wcstring containing the output.
@@ -817,7 +818,7 @@ impl BufferedOutputStream {
     pub fn new(buffer: IoBuffer) -> Self {
         Self { buffer }
     }
-    fn append(&mut self, s: &wstr) -> bool {
+    fn append(&mut self, s: impl ToChars) -> bool {
         self.buffer.append(&wcs2bytes(s), SeparationType::inferred)
     }
     fn append_with_separation(
