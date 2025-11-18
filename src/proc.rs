@@ -24,8 +24,8 @@ use crate::wchar_ext::ToWString;
 use crate::wutil::{wbasename, wperror};
 use libc::{
     _SC_CLK_TCK, EXIT_SUCCESS, SIG_DFL, SIG_IGN, SIGABRT, SIGBUS, SIGCONT, SIGFPE, SIGHUP, SIGILL,
-    SIGINT, SIGKILL, SIGPIPE, SIGQUIT, SIGSEGV, SIGSYS, SIGTTOU, WCONTINUED, WEXITSTATUS,
-    WIFCONTINUED, WIFEXITED, WIFSIGNALED, WIFSTOPPED, WNOHANG, WTERMSIG, WUNTRACED,
+    SIGINT, SIGKILL, SIGPIPE, SIGQUIT, SIGSEGV, SIGSYS, SIGTTOU, STDOUT_FILENO, WCONTINUED,
+    WEXITSTATUS, WIFCONTINUED, WIFEXITED, WIFSIGNALED, WIFSTOPPED, WNOHANG, WTERMSIG, WUNTRACED,
 };
 use once_cell::sync::Lazy;
 #[cfg(not(target_has_atomic = "64"))]
@@ -782,7 +782,7 @@ impl Job {
     }
 
     /// Run ourselves. Returning once we complete or stop.
-    pub fn continue_job(&self, parser: &Parser) {
+    pub fn continue_job(&self, parser: &Parser, block_io: Option<&IoChain>) {
         FLOGF!(
             proc_job_run,
             "Run job %d (%s), %s, %s",
@@ -802,7 +802,7 @@ impl Job {
 
         // Wait for the status of our own job to change.
         while !fish_is_unwinding_for_exit() && !self.is_stopped() && !self.is_completed() {
-            process_mark_finished_children(parser, true);
+            process_mark_finished_children(parser, /*block_ok=*/ true, block_io); // TODO
         }
         if self.is_completed() {
             // Set $status only if we are in the foreground and the last process in the job has
@@ -959,13 +959,13 @@ static JOB_CONTROL_MODE: AtomicU8 = AtomicU8::new(JobControl::Interactive as u8)
 /// Notify the user about stopped or terminated jobs, and delete completed jobs from the job list.
 /// If `interactive` is set, allow removing interactive jobs; otherwise skip them.
 /// Return whether text was printed to stdout.
-pub fn job_reap(parser: &Parser, interactive: bool) -> bool {
+pub fn job_reap(parser: &Parser, interactive: bool, block_io: Option<&IoChain>) -> bool {
     // Early out for the common case that there are no jobs.
     if parser.jobs().is_empty() {
         return false;
     }
 
-    process_mark_finished_children(parser, false /* not block_ok */);
+    process_mark_finished_children(parser, /*block_ok=*/ false, block_io);
     process_clean_after_marking(parser, interactive)
 }
 
@@ -1099,7 +1099,7 @@ fn handle_child_status(job: &Job, proc: &Process, status: ProcStatus) {
 
 /// Wait for any process finishing, or receipt of a signal.
 pub fn proc_wait_any(parser: &Parser) {
-    process_mark_finished_children(parser, true /*block_ok*/);
+    process_mark_finished_children(parser, /*block_ok=*/ true, /*block_io=*/ None); // TODO
     let is_interactive = parser.scope().is_interactive;
     process_clean_after_marking(parser, is_interactive);
 }
@@ -1173,7 +1173,12 @@ static DISOWNED_PIDS: Mutex<Vec<Pid>> = Mutex::new(Vec::new());
 /// See if any reapable processes have exited, and mark them accordingly.
 /// \param block_ok if no reapable processes have exited, block until one is (or until we receive a
 /// signal).
-fn process_mark_finished_children(parser: &Parser, block_ok: bool) {
+fn process_mark_finished_children(parser: &Parser, block_ok: bool, block_io: Option<&IoChain>) {
+    let block_io = if parser.is_command_substitution() {
+        block_io
+    } else {
+        None
+    };
     // Get the exit and signal generations of all reapable processes.
     // The exit generation tells us if we have an exit; the signal generation allows for detecting
     // SIGHUP and SIGINT.
@@ -1256,6 +1261,8 @@ fn process_mark_finished_children(parser: &Parser, block_ok: bool) {
                     pid,
                     proc.status().status_value()
                 );
+
+                cmdsub_flush_process_output(block_io);
             } else {
                 assert!(status.stopped() || status.continued());
                 FLOGF!(
@@ -1315,6 +1322,20 @@ fn process_mark_finished_children(parser: &Parser, block_ok: bool) {
 
     // Remove any zombies.
     reap_disowned_pids();
+}
+
+fn cmdsub_flush_process_output(block_io: Option<&IoChain>) {
+    let Some(block_io) = block_io else {
+        return;
+    };
+    // TODO stdin, stderr?
+    let Some(stdout) = block_io.io_for_fd(STDOUT_FILENO) else {
+        return;
+    };
+    let Some(stdout) = stdout.as_bufferfill() else {
+        return;
+    };
+    stdout.flush();
 }
 
 /// Generate process_exit events for any completed processes in `j`.

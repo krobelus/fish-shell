@@ -355,9 +355,13 @@ impl IoBufferfill {
         &self.buffer
     }
 
+    pub fn flush(&self) {
+        fd_monitor().with_fd(self.item_id, |fd| self.buffer.flush(fd));
+    }
+
     /// Reset the receiver (possibly closing the write end of the pipe), and complete the fillthread
     /// of the buffer. Return the buffer.
-    pub fn finish(filler: Arc<IoBufferfill>) -> SeparatedBuffer {
+    pub fn finish(filler: Arc<Self>) -> SeparatedBuffer {
         // The io filler is passed in. This typically holds the only instance of the write side of the
         // pipe used by the buffer's fillthread (except for that side held by other processes).
         // Then allow the buffer to finish.
@@ -440,14 +444,24 @@ impl IoBuffer {
         amt
     }
 
+    pub fn flush(&self, fd: &AutoCloseFd) {
+        let mut locked_buff = self.0.lock().unwrap();
+        self.flush_impl(fd, &mut locked_buff);
+    }
+
+    fn flush_impl(&self, fd: &AutoCloseFd, locked_buff: &mut MutexGuard<'_, SeparatedBuffer>) {
+        // Read any remaining data from the pipe.
+        while fd.is_valid() && IoBuffer::read_once(fd.as_raw_fd(), &mut *locked_buff) > 0 {
+            // pass
+        }
+    }
+
     /// End the background fillthread operation, and return the buffer, transferring ownership.
     /// The read end of the pipe is provided.
     pub fn complete_and_take_buffer(&self, fd: AutoCloseFd) -> SeparatedBuffer {
         // Read any remaining data from the pipe.
         let mut locked_buff = self.0.lock().unwrap();
-        while fd.is_valid() && IoBuffer::read_once(fd.as_raw_fd(), &mut locked_buff) > 0 {
-            // pass
-        }
+        self.flush_impl(&fd, &mut locked_buff);
 
         // Return our buffer, transferring ownership.
         let mut result = SeparatedBuffer::new(locked_buff.limit());

@@ -486,6 +486,7 @@ impl Parser {
 
     /// Return whether we are currently evaluating a command substitution.
     pub fn is_command_substitution(&self) -> bool {
+        // TODO use is_subshell?
         self.blocks_iter_rev()
             // If a function sources a file, don't descend further.
             .take_while(|b| b.typ() != BlockType::source)
@@ -673,7 +674,7 @@ impl Parser {
             return EvalRes::new(ProcStatus::from_signal(sig));
         }
 
-        job_reap(self, false); // not sure why we reap jobs here
+        job_reap(self, false, None); // not sure why we reap jobs here
 
         // Start it up
         let mut op_ctx = self.context();
@@ -708,7 +709,7 @@ impl Parser {
         ScopeGuarding::commit(restore_line_counter);
         self.pop_block(scope_block);
 
-        job_reap(self, false); // reap again
+        job_reap(self, false, None); // reap again
 
         let sig = signal_check_cancel();
         if sig != 0 {

@@ -274,6 +274,11 @@ impl FdMonitor {
         item_id
     }
 
+    pub fn with_fd(&self, item_id: FdMonitorItemId, cb: impl FnOnce(&mut AutoCloseFd)) {
+        let mut data = self.data.lock().expect("Mutex poisoned!");
+        cb(&mut data.items.get_mut(&item_id).unwrap().fd);
+    }
+
     /// Remove an item from the monitor and return its file descriptor.
     /// Note we may remove an item whose fd is currently being waited on in select(); this is
     /// considered benign because the underlying item will no longer be present and so its
