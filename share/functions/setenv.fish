@@ -39,4 +39,6 @@ function setenv
     else
         set -gx $var $val
     end
+
+    return 0
 end

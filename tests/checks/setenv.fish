@@ -24,5 +24,15 @@ setenv var hello you
 
 # Two args should set the named var to the second arg
 setenv setenv3 'hello you'
+echo $status
 setenv | grep '^setenv3=hello you'
+# CHECK: 0
 # CHECK: setenv3=hello you
+
+# Path-like vars should still split on colons and return success.
+setenv PATH alpha:beta
+echo $status
+printf '%s\n' $PATH
+# CHECK: 0
+# CHECK: alpha
+# CHECK: beta
