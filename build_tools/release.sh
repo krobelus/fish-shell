@@ -21,6 +21,10 @@ for tool in \
     cmake \
     bundle \
     diff \
+    dh \
+    dh_autoreconf \
+    dput \
+    dpkg-buildpackage \
     gh \
     gpg \
     jq \
@@ -42,8 +46,8 @@ committer=${committer% *} # strip timezone
 committer=${committer% *} # strip timestamp
 gpg --local-user="$committer" --sign </dev/null >/dev/null
 
-repo_root="$(dirname "$0")/.."
-fish_site=$repo_root/../fish-site
+workspace_root="$(dirname "$0")/.."
+fish_site=$workspace_root/../fish-site
 fish_site_repo=git@github.com:$repository_owner/fish-site
 
 for path in . "$fish_site"
@@ -87,6 +91,7 @@ gh_api_repo() {
         "$@"
 }
 minor_version=${version%.*}
+major_version=${minor_version%.*}
 milestone_version=$(
     if echo "$version" | grep -q '\.0$'; then
         echo "$minor_version"
@@ -102,6 +107,16 @@ milestone_number() {
 }
 milestone_number=$(milestone_number "$milestone_version")
 [ -n "$milestone_number" ]
+
+# Check if osc has write access to OBS.
+obs_projects="shells:fish shells:fish:release:$major_version"
+meta=$(mktemp)
+for obs_project in $obs_projects
+do
+    osc api /source/"$obs_project"/_meta >"$meta"
+    osc api -X PUT -T "$meta" /source/"$obs_project"/_meta
+done
+rm "$meta"
 
 changelog_title="fish $version (released $(date +'%B %d, %Y'))"
 sed -i \
@@ -168,7 +183,7 @@ fish_tar_xz=fish-$version.tar.xz
 (
     local_tarball=$tmpdir/local-tarball
     mkdir "$local_tarball"
-    FISH_ARTEFACT_PATH=$local_tarball ./build_tools/make_tarball.sh
+    FISH_ARTEFACT_PATH=$local_tarball sh -x ./build_tools/make_tarball.sh
     cd "$local_tarball"
     tar xf "$fish_tar_xz"
 )
@@ -246,7 +261,7 @@ latest_release=$(
 if [ "$version" = "$latest_release" ]; then
     CopyDocs current
 fi
-rm -rf "$tmpdir"
+
 (
     cd "$fish_site"
     make
@@ -298,6 +313,56 @@ fi
     git fetch "$fish_site_repo" \
         "$(git rev-parse HEAD):refs/remotes/origin/master"
 )
+
+{
+    local_tarball="$tmpdir/local-tarball"
+    (
+        export FISH_ARTEFACT_PATH="$local_tarball"
+        sh -x "$workspace_root"/build_tools/make_vendor_tarball.sh
+        DEB_SIGN_KEYID=$committer \
+            sh -x \
+            "$workspace_root"/build_tools/make_linux_packages.sh $version
+    )
+    (
+        # Upload Ubuntu packages.
+        cd "$local_tarball"
+        cat >dput.cf <<EOF
+[fish-release-$major_version]
+fqdn = ppa.launchpad.net
+method = ftp
+login = anonymous
+incoming = ~fish-shell/release/ubuntu/$major_version
+allow_unsigned_uploads = 0
+EOF
+        for i in fish_${version}-1\~*.changes
+        do
+            dput -c dput.cf fish-release-$major_version $i
+        done
+    )
+    (
+        mkdir "$local_tarball/obs"
+        cd "$local_tarball/obs"
+        rpmversion=$(echo $version | sed -e 's/-/+/' -e 's/-/./g')
+        for obs_project in $obs_projects
+        do {
+            osc checkout "$obs_project/fish"
+            (
+                cd "$obs_project/fish"
+                rm *.tar.* *.dsc
+                ln -s $local_tarball/fish_$version.orig.tar.xz .
+                ln -s $local_tarball/fish_$version.orig-cargo-vendor.tar.xz .
+                ln -s $local_tarball/fish_$version-1.debian.tar.xz .
+                ln -s $local_tarball/fish_$version-1.dsc .
+                sed -e "s/@version@/$version/g" \
+                    -e "s/@RPMVERSION@/$rpmversion/g" \
+                    <$local_tarball/fish-$version/fish.spec.in >fish.spec
+                osc addremove
+                osc commit -m "New release: $version"
+            )
+        } done
+    )
+}
+rm -rf "$tmpdir"
 
 if [ -n "$integration_branch" ]; then {
     git push "$remote" "$version^{commit}:refs/heads/$integration_branch"
