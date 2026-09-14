@@ -1,1 +1,0 @@
-make_macos_pkg.sh
